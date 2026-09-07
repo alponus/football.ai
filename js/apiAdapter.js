@@ -113,28 +113,65 @@ function projectFixtureFromApiStats(evTakim, depTakim, homeProfile, awayProfile)
 }
 
 /**
- * /api/odds cevabindan (bir fixture'a ait bookmaker listesi) 1.5 Ust
- * ve KG Var oranlarini cikarir. Bulamazsa null doner - UYDURMAZ.
+ * /api/odds cevabindan MUMKUN OLAN TUM Grup A pazarlarinin oranlarini
+ * cikarir. Bulunamayan her pazar icin key hic eklenmez (uydurma yok).
+ * Donen anahtarlar, markets.js'teki computeAllMarkets() ile AYNI
+ * marketKey semasini kullanir, boylece iki taraf kesisimi alinabilir.
  */
-function extractMarketOdds(oddsResponseArray){
-  const result = { oran15: null, oranKg: null };
-  if(!oddsResponseArray || oddsResponseArray.length===0) return result;
+function extractAllMarketOdds(oddsResponseArray){
+  const odds = {};
+  if(!oddsResponseArray || oddsResponseArray.length===0) return odds;
 
   const bookmakers = oddsResponseArray[0]?.bookmakers || [];
+
+  const findValue = (bet, matchFn) => {
+    const v = (bet.values||[]).find(x => matchFn((x.value||'').toLowerCase().trim()));
+    return v ? parseFloat(v.odd) : null;
+  };
+
   for(const bm of bookmakers){
     for(const bet of (bm.bets||[])){
       const name = (bet.name||'').toLowerCase();
 
-      if(result.oran15===null && name.includes('over/under') && !name.includes('corner') && !name.includes('card') && !name.includes('half')){
-        const v = (bet.values||[]).find(x => (x.value||'').toLowerCase().trim() === 'over 1.5');
-        if(v) result.oran15 = parseFloat(v.odd);
+      // Mac Sonucu
+      if(name === 'match winner'){
+        setIfMissing(odds,'MS1', findValue(bet, v=>v==='home'));
+        setIfMissing(odds,'MSX', findValue(bet, v=>v==='draw'));
+        setIfMissing(odds,'MS2', findValue(bet, v=>v==='away'));
       }
-      if(result.oranKg===null && (name.includes('both teams score') || name === 'btts')){
-        const v = (bet.values||[]).find(x => (x.value||'').toLowerCase().trim() === 'yes');
-        if(v) result.oranKg = parseFloat(v.odd);
+
+      // Cifte Sans
+      if(name === 'double chance'){
+        setIfMissing(odds,'CS_1X', findValue(bet, v=>v==='home/draw'));
+        setIfMissing(odds,'CS_X2', findValue(bet, v=>v==='draw/away'));
+        setIfMissing(odds,'CS_12', findValue(bet, v=>v==='home/away'));
+      }
+
+      // Toplam Gol Alt/Ust (birden fazla hat ayni bet icinde gelir)
+      if(name.includes('over/under') && !name.includes('corner') && !name.includes('card') && !name.includes('half') && !name.includes('1st')){
+        [0.5,1.5,2.5,3.5,4.5].forEach(line=>{
+          setIfMissing(odds, `OU_${line}_OVER`, findValue(bet, v=>v===`over ${line}`));
+          setIfMissing(odds, `OU_${line}_UNDER`, findValue(bet, v=>v===`under ${line}`));
+        });
+      }
+
+      // Tek/Cift
+      if(name === 'odd/even'){
+        setIfMissing(odds,'ODD', findValue(bet, v=>v==='odd'));
+        setIfMissing(odds,'EVEN', findValue(bet, v=>v==='even'));
+      }
+
+      // Karsilikli Gol
+      if(name.includes('both teams score') || name==='btts'){
+        setIfMissing(odds,'KGVAR', findValue(bet, v=>v==='yes'));
+        setIfMissing(odds,'KGYOK', findValue(bet, v=>v==='no'));
       }
     }
-    if(result.oran15!==null && result.oranKg!==null) break; // yeterli bookmaker bulundu
   }
-  return result;
+  return odds;
 }
+
+function setIfMissing(obj, key, val){
+  if(val!==null && val!==undefined && !isNaN(val) && obj[key]===undefined) obj[key] = val;
+}
+

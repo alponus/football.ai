@@ -84,6 +84,7 @@ Galatasaray | Deplasman | Alanyaspor | 2-0 | 2026-08-17"></textarea>
 
 <script src="js/storage.js"></script>
 <script src="js/poisson.js"></script>
+<script src="js/markets.js"></script>
 <script src="js/edge.js"></script>
 <script src="js/parser.js"></script>
 <script src="js/coupons.js"></script>
@@ -178,22 +179,23 @@ async function runAutoAnalysis(){
       setProgressLine(`Takım verileri hazırlanıyor... ${done}/${total}`);
     });
 
-    // 4) ORANLAR (H2H su an icin atlanildi - Faz 3'te guven puanina eklenecek)
+    // 4) ORANLAR
     setProgressLine(`Oranlar alınıyor...`);
     const oddsCache = new Map();
     await concurrencyMap(maclar, 8, async (m)=>{
       const r = await fetch(`/api/odds?fixture=${m.fixture.id}`);
       const d = await r.json();
       usedRequests++;
-      oddsCache.set(m.fixture.id, (d && d.odds) ? extractMarketOdds(d.odds) : {oran15:null, oranKg:null});
+      oddsCache.set(m.fixture.id, (d && d.odds) ? extractAllMarketOdds(d.odds) : {});
     }, (done,total)=>{
       setProgressLine(`Oranlar alınıyor... ${done}/${total}`);
     });
 
-    // 5) ANALIZ
+    // 5) ANALIZ — artik TEK pazar degil, hesaplanabilen TUM Grup A pazarlari
     setProgressLine('Analiz ediliyor...');
     const projections = [];
     const legs = [];
+    let cokPazarliMacSayisi = 0;
     maclar.forEach(m=>{
       const homeKey = `${m.teams.home.id}-${m.league.id}-${m.league.season}`;
       const awayKey = `${m.teams.away.id}-${m.league.id}-${m.league.season}`;
@@ -204,16 +206,27 @@ async function runAutoAnalysis(){
       proj.fixtureId = m.fixture.id;
       projections.push(proj);
 
-      if(proj.noData) return; // veri yoksa bacak uretme
+      if(proj.noData) return; // veri yoksa hicbir pazar hesaplanamaz
 
-      const odds = oddsCache.get(m.fixture.id) || {oran15:null, oranKg:null};
+      const allMarkets = computeAllMarkets(proj.lambdaHome, proj.lambdaAway);
+      const oddsForMatch = oddsCache.get(m.fixture.id) || {};
       const mac = `${m.teams.home.name} - ${m.teams.away.name}`;
-      if(odds.oran15!==null){
-        legs.push(evaluateLeg(mac, '1.5 Üst', proj.pOver15, odds.oran15, proj));
-      }
-      if(odds.oranKg!==null){
-        legs.push(evaluateLeg(mac, 'KG Var', proj.pBtts, odds.oranKg, proj));
-      }
+
+      let macBacakSayisi = 0;
+      Object.keys(allMarkets).forEach(key=>{
+        const odds = oddsForMatch[key];
+        if(odds===undefined) return; // bu pazarin oran verisi yok - uydurma yok, atla
+        const market = allMarkets[key];
+        legs.push(evaluateLeg(mac, market.label, market.prob, odds, proj));
+        macBacakSayisi++;
+      });
+      if(macBacakSayisi>0) cokPazarliMacSayisi++;
+
+      // Model-only "en guclu senaryo" bilgisi (oran olsun olmasin gosterilir)
+      const anaPazarlar = ['MS1','MSX','MS2','OU_1.5_OVER','OU_2.5_OVER','KGVAR'];
+      let topKey=null, topProb=-1;
+      anaPazarlar.forEach(k=>{ if(allMarkets[k] && allMarkets[k].prob>topProb){ topProb=allMarkets[k].prob; topKey=k; } });
+      proj.enGucluSenaryo = topKey ? `${allMarkets[topKey].label} (%${(topProb*100).toFixed(0)})` : '—';
     });
 
     // 6) KUPON MOTORU
@@ -226,7 +239,8 @@ async function runAutoAnalysis(){
       analyzed: maclar.length, playable: playable.length, value: value.length,
       notRecommended: maclar.length - playable.length,
       veriEksik: projections.filter(p=>p.noData).length,
-      oranEksik: maclar.length - legs.length/2, // kabaca
+      oranBulunanMacSayisi: cokPazarliMacSayisi,
+      toplamBacak: legs.length,
     };
 
     document.getElementById('autoProgressZone').innerHTML = '';
@@ -258,14 +272,25 @@ function renderAutoResults(legs, coupons, stats, projections, el){
   let html = '';
   html += `<div class="stat-row">
     <div class="stat"><div class="lbl">Toplam Maç</div><div class="num num-gold">${stats.analyzed}</div></div>
-    <div class="stat"><div class="lbl">Analiz Edilebilen</div><div class="num num-growth">${stats.analyzed - stats.veriEksik}</div></div>
-    <div class="stat"><div class="lbl">Verisi Eksik</div><div class="num num-risk">${stats.veriEksik}</div></div>
+    <div class="stat"><div class="lbl">Oranlı Pazar Bulunan Maç</div><div class="num num-growth">${stats.oranBulunanMacSayisi}</div></div>
+    <div class="stat"><div class="lbl">Toplam Hesaplanan Bacak</div><div class="num num-gold">${stats.toplamBacak}</div></div>
     <div class="stat"><div class="lbl">Kupon Sayısı</div><div class="num num-gold">${coupons.length}</div></div>
   </div>`;
 
   const spotlight = [...legs].filter(l=>!l.noData).sort((a,b)=>(b.stars-a.stars)||(b.edge-a.edge))[0];
   if(spotlight && spotlight.stars>=3){
     html += renderSpotlight(spotlight, projections);
+  }
+
+  const macOzet = projections.filter(p=>!p.noData).sort((a,b)=>b.guvenScore-a.guvenScore).slice(0,20);
+  if(macOzet.length>0){
+    html += `<div class="panel"><h2>Maç Bazlı En Güçlü Senaryo</h2>
+      <p class="hint">Her maç için, hesaplanan ana pazarlar arasından modelin en olası gördüğü senaryo (oran verisi olsun olmasın, bilgi amaçlı).</p>
+      <div class="table-scroll"><table><thead><tr><th>Lig</th><th>Maç</th><th>En Güçlü Senaryo</th><th>Güven</th></tr></thead><tbody>`;
+    macOzet.forEach(p=>{
+      html += `<tr><td>${p.lig}</td><td>${p.evTakim} - ${p.depTakim}</td><td>${p.enGucluSenaryo}</td><td class="tag">${p.guven}</td></tr>`;
+    });
+    html += `</tbody></table></div></div>`;
   }
 
   const withOdds = [...legs].sort((a,b)=>b.edge-a.edge);
