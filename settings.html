@@ -22,10 +22,10 @@
         <input type="range" id="minEdge" min="-100" max="50" step="1"></div>
       <div class="field"><label>Minimum Güven Skoru (bilgi amaçlı, artık engel değil) <span id="v_minGuven"></span></label>
         <input type="range" id="minGuvenScore" min="0" max="100" step="5"></div>
-      <div class="field"><label>Minimum Oran <span id="v_minOdds"></span></label>
-        <input type="range" id="minOdds" min="1.01" max="3" step="0.05"></div>
-      <div class="field"><label>Maksimum Oran <span id="v_maxOdds"></span></label>
-        <input type="range" id="maxOdds" min="1.5" max="5" step="0.05"></div>
+      <div class="field"><label>Minimum Oran (düşük oranlı "doldurma" bacakları eler) <span id="v_minOdds"></span></label>
+        <input type="range" id="minOdds" min="1.01" max="10" step="0.1"></div>
+      <div class="field"><label>Maksimum Oran (0 = sınırsız) <span id="v_maxOdds"></span></label>
+        <input type="range" id="maxOdds" min="0" max="50" step="0.5"></div>
       <div class="field"><label>Hedef Toplam Oran — Alt Sınır <span id="v_targetMin"></span></label>
         <input type="range" id="targetMin" min="2" max="8" step="0.1"></div>
       <div class="field"><label>Hedef Toplam Oran — Üst Sınır <span id="v_targetMax"></span></label>
@@ -77,7 +77,7 @@ function loadIntoForm(){
   document.getElementById('minEdge').value = s.minEdge*100;
   document.getElementById('minGuvenScore').value = s.minGuvenScore;
   document.getElementById('minOdds').value = s.minOdds;
-  document.getElementById('maxOdds').value = s.maxOdds;
+  document.getElementById('maxOdds').value = (s.maxOdds>=999) ? 0 : s.maxOdds;
   document.getElementById('targetMin').value = s.targetMin;
   document.getElementById('targetMax').value = s.targetMax;
   document.getElementById('maxLegs').value = s.maxLegs;
@@ -89,7 +89,8 @@ function updateLabels(){
   document.getElementById('v_minEdge').textContent = document.getElementById('minEdge').value + '%';
   document.getElementById('v_minGuven').textContent = document.getElementById('minGuvenScore').value;
   document.getElementById('v_minOdds').textContent = document.getElementById('minOdds').value;
-  document.getElementById('v_maxOdds').textContent = document.getElementById('maxOdds').value;
+  const maxOddsVal = parseFloat(document.getElementById('maxOdds').value);
+  document.getElementById('v_maxOdds').textContent = maxOddsVal===0 ? 'Sınırsız' : maxOddsVal;
   document.getElementById('v_targetMin').textContent = document.getElementById('targetMin').value;
   document.getElementById('v_targetMax').textContent = document.getElementById('targetMax').value;
   document.getElementById('v_maxLegs').textContent = document.getElementById('maxLegs').value;
@@ -104,7 +105,7 @@ function saveAll(){
     minEdge: parseFloat(document.getElementById('minEdge').value)/100,
     minGuvenScore: parseFloat(document.getElementById('minGuvenScore').value),
     minOdds: parseFloat(document.getElementById('minOdds').value),
-    maxOdds: parseFloat(document.getElementById('maxOdds').value),
+    maxOdds: (parseFloat(document.getElementById('maxOdds').value)===0) ? 1000 : parseFloat(document.getElementById('maxOdds').value),
     targetMin: parseFloat(document.getElementById('targetMin').value),
     targetMax: parseFloat(document.getElementById('targetMax').value),
     maxLegs: parseInt(document.getElementById('maxLegs').value),

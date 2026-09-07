@@ -36,8 +36,10 @@
       <p class="hint" style="margin-top:-8px;">Not: Küçük liglerde API'nin oran (odds) verisi neredeyse hiç yok — "tüm ligler" denemesinde 202 maçtan sadece 1 tanesinde oran bulundu. Anlamlı sonuç almak için bu kutuyu işaretli bırakman önerilir.</p>
       <div class="btn-row">
         <button class="primary" id="autoAnalyzeBtn" onclick="runAutoAnalysis()">BUGÜNÜ ANALİZ ET</button>
+        <button class="ghost" onclick="showLeagueCodes()">Bugün Görülen Tüm Lig Kodlarını Göster</button>
         <span class="save-note" id="apiStatus"></span>
       </div>
+      <div id="leagueCodesZone" style="margin-top:10px;"></div>
       <div id="autoProgressZone" style="margin-top:14px;"></div>
       <div id="autoResultsZone"></div>
     </div>
@@ -101,6 +103,19 @@ function switchMode(mode){
   document.getElementById('manuelPanel').style.display = mode==='manuel' ? 'block' : 'none';
 }
 
+function showLeagueCodes(){
+  const el = document.getElementById('leagueCodesZone');
+  if(!window.__tumLigKodlari || window.__tumLigKodlari.length===0){
+    el.innerHTML = `<p class="empty-note">Önce "BUGÜNÜ ANALİZ ET"e bir kez basmalısın, o zaman bugünün tüm lig kodlarını burada listeleyebilirim.</p>`;
+    return;
+  }
+  el.innerHTML = `<div class="panel"><h2>Bugün Görülen Tüm Ligler (${window.__tumLigKodlari.length})</h2>
+    <p class="hint">İstediğin bir lig eksikse, buradaki tam satırı kopyalayıp bana gönder — MAJOR_LEAGUE_IDS listesine doğru kodla eklerim.</p>
+    <div class="table-scroll" style="max-height:400px;overflow-y:auto;"><table><tbody>
+    ${window.__tumLigKodlari.map(l=>`<tr><td><code>${l}</code></td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
 function setProgressLine(text){
   document.getElementById('autoProgressZone').innerHTML = `
     <div class="progress-wrap">
@@ -141,11 +156,36 @@ async function runAutoAnalysis(){
     }
 
     // Popüler lig filtresi (opsiyonel) - kucuk liglerde oran verisi neredeyse hic yok
-    const MAJOR_LEAGUE_IDS = new Set([39,40,140,135,78,61,88,94,203,2,3,848,1]);
-    // 39:Premier League 40:Championship 140:La Liga 135:Serie A 78:Bundesliga
-    // 61:Ligue 1 88:Eredivisie 94:Primeira Liga 203:Süper Lig 2:UCL 3:UEL 848:Conference League 1:Dünya Kupası
+    // NOT: Bu ID'lerin bir kismi (ozellikle 2. ligler) API-Football'dan dogrulanmadi,
+    // ID yanlissa o lig sessizce listeden dusar (yanlis veri gostermez, sadece eksik kalir).
+    // "Görülen Tüm Ligler" tablosundan gercek ID'leri kontrol edip bize bildirebilirsin.
+    const MAJOR_LEAGUE_IDS = new Set([
+      39,40,41,42,   // Ingiltere: Premier League, Championship, League One, League Two
+      140,141,       // Ispanya: La Liga, La Liga 2
+      135,136,       // Italya: Serie A, Serie B
+      78,79,         // Almanya: Bundesliga, 2. Bundesliga
+      61,62,         // Fransa: Ligue 1, Ligue 2
+      88,            // Hollanda: Eredivisie
+      94,            // Portekiz: Primeira Liga
+      144,           // Belcika: Jupiler Pro League
+      179,           // Iskocya: Premiership
+      203,204,       // Turkiye: Super Lig, 1. Lig
+      71,            // Brezilya: Serie A
+      128,           // Arjantin: Liga Profesional
+      253,           // ABD: MLS
+      2,3,848,1,     // UEFA Sampiyonlar Ligi, Avrupa Ligi, Konferans Ligi, Dunya Kupasi
+    ]);
     const onlyMajor = document.getElementById('onlyMajorLeagues').checked;
     const maclar = onlyMajor ? maclarHam.filter(m=>MAJOR_LEAGUE_IDS.has(m.league.id)) : maclarHam;
+
+    // Teshis araci: bugun gelen TUM liglerin gercek {id, isim, ulke} listesi
+    const ligKoduHaritasi = new Map();
+    maclarHam.forEach(m=>{
+      if(!ligKoduHaritasi.has(m.league.id)){
+        ligKoduHaritasi.set(m.league.id, `${m.league.id} — ${m.league.name} (${m.league.country})`);
+      }
+    });
+    window.__tumLigKodlari = Array.from(ligKoduHaritasi.values()).sort();
 
     if(maclar.length===0){
       resultEl.innerHTML = `<p class="empty-note">Seçili filtreyle (popüler ligler) bugün maç bulunamadı. Filtreyi kaldırıp tekrar dene.</p>`;

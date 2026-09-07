@@ -22,8 +22,8 @@ const STORE_KEYS = {
 const DEFAULT_SETTINGS = {
   minEdge: -1,          // Varsayilan: edge filtre DEGIL, sadece bilgi. -1 = hicbir zaman engellemez.
   minGuvenScore: 0,     // Varsayilan: guven skoru da engellemez, sadece gosterilir.
-  minOdds: 1.10,
-  maxOdds: 3.00,
+  minOdds: 2.0,         // Kullanicinin tercihi: dusuk oranli "doldurma" bacaklar kupona girmesin
+  maxOdds: 1000,        // Kullanicinin tercihi: ust sinir yok (pratikte sinirsiz)
   targetMin: 4.5,
   targetMax: 6.5,
   maxLegs: 4,
