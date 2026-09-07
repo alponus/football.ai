@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Football AI Pro — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <div class="main">
+    <div class="page-header">
+      <h1>Bugünün Raporu</h1>
+      <div class="sub" id="dateLabel"></div>
+    </div>
+
+    <div class="panel no-print">
+      <h2>Analiz Modu</h2>
+      <div class="checkbox-row">
+        <label><input type="radio" name="mod" value="otomatik" checked onchange="switchMode('otomatik')"> Otomatik (API-Football) — BETA</label>
+        <label><input type="radio" name="mod" value="manuel" onchange="switchMode('manuel')"> Manuel Analiz</label>
+      </div>
+    </div>
+
+    <div id="otomatikPanel" class="panel">
+      <h2>Faz 1 Testi — Bugünün Fikstürü</h2>
+      <p class="hint">Bu, tam analiz değil — sadece API bağlantısının çalışıp çalışmadığını doğrulayan bir test. "Getir" butonuna basınca bugünün (Europe/Istanbul saatiyle) tüm maçları listelenmeli.</p>
+      <div class="btn-row">
+        <button class="primary" onclick="testFixtures()">Bugünün Fikstürünü Getir</button>
+        <span class="save-note" id="apiStatus"></span>
+      </div>
+      <div id="fixturesTestResult" style="margin-top:14px;"></div>
+    </div>
+
+    <div id="manuelPanel" style="display:none;">
+    <div class="panel no-print">
+      <h2>Veri Kaynağı</h2>
+      <div class="checkbox-row">
+        <label><input type="radio" name="kaynak" value="Nesine" checked> Nesine</label>
+        <label><input type="radio" name="kaynak" value="Mackolik"> Mackolik</label>
+        <label><input type="radio" name="kaynak" value="Manuel"> Manuel</label>
+      </div>
+    </div>
+
+    <div class="panel no-print">
+      <h2>Maç Verisi</h2>
+      <p class="hint">Format: <code>Ev Takım - Deplasman Takım | 1.5U:1.35 KG:1.85</code> — her satıra bir maç. Ctrl+V ile yapıştır.</p>
+      <textarea id="fixturesInput" placeholder="Galatasaray - Fenerbahce | 1.5U:1.35 KG:1.85
+Besiktas - Trabzonspor | 1.5U:1.42 KG:1.90"></textarea>
+    </div>
+
+    <div class="panel no-print">
+      <h2>Takım Geçmişi</h2>
+      <p class="hint">Format: <code>Takım | Saha | Rakip | AttığıGol-YediğiGol | Tarih(opsiyonel)</code> — her satıra bir maç. Daha önce girdiğin veriler otomatik kaydedilir, sadece yeni maçları eklemen yeterli.</p>
+      <textarea id="historyInput" placeholder="Galatasaray | Ev | Kasimpasa | 3-1 | 2026-08-10
+Galatasaray | Deplasman | Alanyaspor | 2-0 | 2026-08-17"></textarea>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="ghost" onclick="loadSavedHistoryIntoBox()">Kayıtlı geçmişi kutuya yükle</button>
+        <span class="save-note" id="historyCount"></span>
+      </div>
+    </div>
+
+    <div class="btn-row no-print" style="margin:20px 0;">
+      <button class="primary" id="analyzeBtn" onclick="startAnalysis()">Analiz Et</button>
+    </div>
+
+    <div id="progressZone"></div>
+    <div id="resultsZone"></div>
+    </div><!-- /manuelPanel -->
+
+    <footer class="legal">Bu rapor istatistiksel bir modelin çıktısıdır, kazanç garantisi değildir. Edge pozitif olsa bile model hatalı olabilir. Bankroll'unun küçük bir yüzdesinden fazlasını tek kuponda riske atma.</footer>
+  </div>
+</div>
+
+<script src="js/storage.js"></script>
+<script src="js/poisson.js"></script>
+<script src="js/edge.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/coupons.js"></script>
+<script src="js/statistics.js"></script>
+<script src="js/app.js"></script>
+<script>
+initShell('dashboard');
+document.getElementById('dateLabel').textContent = todayKey();
+updateHistoryCount();
+
+function switchMode(mode){
+  document.getElementById('otomatikPanel').style.display = mode==='otomatik' ? 'block' : 'none';
+  document.getElementById('manuelPanel').style.display = mode==='manuel' ? 'block' : 'none';
+}
+
+async function testFixtures(){
+  const statusEl = document.getElementById('apiStatus');
+  const resultEl = document.getElementById('fixturesTestResult');
+  statusEl.textContent = 'Sorgulanıyor...';
+  resultEl.innerHTML = '';
+
+  try{
+    const res = await fetch('/api/fixtures');
+    const data = await res.json();
+
+    if(data.hata){
+      statusEl.textContent = '';
+      let mesaj = data.mesaj;
+      if(data.hata==='SUNUCU_AYARI_EKSIK'){
+        resultEl.innerHTML = `<div class="no-play-banner">API_FOOTBALL_KEY ayarlanmamış</div><p class="empty-note">${mesaj}</p>`;
+      } else if(data.hata==='API_LIMIT_VEYA_HATA'){
+        resultEl.innerHTML = `<div class="no-play-banner">API günlük kullanım limitine yaklaşıldı</div><p class="empty-note">${mesaj}</p>`;
+      } else if(data.hata==='BAGLANTI_HATASI'){
+        resultEl.innerHTML = `<div class="no-play-banner">API verisine şu anda ulaşılamıyor</div><p class="empty-note">${mesaj}</p>`;
+      } else {
+        resultEl.innerHTML = `<p class="empty-note">${mesaj}</p>`;
+      }
+      return;
+    }
+
+    statusEl.textContent = `✓ Kalan istek: ${data.kalanIstek ?? '—'} / ${data.toplamIstekHakki ?? '—'}`;
+
+    if(!data.maclar || data.maclar.length===0){
+      resultEl.innerHTML = `<p class="empty-note">${data.tarih} tarihinde maç bulunamadı (ya da API henüz fikstürü yayınlamadı).</p>`;
+      return;
+    }
+
+    let html = `<p class="hint">${data.tarih} — Toplam ${data.toplamMac} maç bulundu. İlk 15 tanesi:</p>
+      <div class="table-scroll"><table><thead><tr><th>Lig</th><th>Ev Sahibi</th><th>Deplasman</th><th>Saat</th></tr></thead><tbody>`;
+    data.maclar.slice(0,15).forEach(m=>{
+      const saat = new Date(m.fixture.date).toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',timeZone:'Europe/Istanbul'});
+      html += `<tr><td>${m.league.name} (${m.league.country})</td><td>${m.teams.home.name}</td><td>${m.teams.away.name}</td><td>${saat}</td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+    resultEl.innerHTML = html;
+
+  }catch(e){
+    statusEl.textContent = '';
+    resultEl.innerHTML = `<div class="no-play-banner">Bağlantı hatası</div><p class="empty-note">Sunucuya ulaşılamadı: ${e.message}</p>`;
+  }
+}
+
+function updateHistoryCount(){
+  const h = getTeamHistory();
+  document.getElementById('historyCount').textContent = h.length>0 ? `Kayıtlı: ${h.length} maçlık geçmiş` : 'Henüz kayıtlı geçmiş yok';
+}
+function loadSavedHistoryIntoBox(){
+  const h = getTeamHistory();
+  const lines = h.map(r=> `${r.takim} | ${r.saha} | ${r.rakip} | ${r.attigi}-${r.yedigi}${r.tarih?(' | '+r.tarih):''}`);
+  document.getElementById('historyInput').value = lines.join('\n');
+}
+
+let lastLegs = [], lastCoupons = [], lastStats = null;
+
+function startAnalysis(){
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+  document.getElementById('resultsZone').innerHTML = '';
+  const steps = ['Takımlar analiz ediliyor...', 'Poisson hesaplanıyor', 'Edge hesaplanıyor', 'Kupon hazırlanıyor...'];
+  runProgressSequence(steps, document.getElementById('progressZone'), ()=>{
+    document.getElementById('progressZone').innerHTML = '';
+    btn.disabled = false;
+    runAnalysis();
+  });
+}
+
+function runAnalysis(){
+  const fixturesText = document.getElementById('fixturesInput').value.trim();
+  const historyText = document.getElementById('historyInput').value.trim();
+
+  const { fixtures, errors: fixtureErrors } = parseFixturesText(fixturesText);
+  const { history: newHistory, errors: historyErrors } = parseHistoryText(historyText);
+
+  // yeni gecmis satirlarini kayitli gecmisle birlestir (ayni mac tekrar eklenmesin)
+  const existing = getTeamHistory();
+  const sig = r => `${r.takim}|${r.saha}|${r.rakip}|${r.attigi}-${r.yedigi}|${r.tarih}`;
+  const existingSigs = new Set(existing.map(sig));
+  newHistory.forEach(r=>{ if(!existingSigs.has(sig(r))) existing.push(r); });
+  saveTeamHistory(existing);
+  updateHistoryCount();
+
+  if(fixtures.length===0){
+    document.getElementById('resultsZone').innerHTML = `<div class="panel"><p class="empty-note">Maç verisi kutusuna en az bir maç girmeden analiz yapılamaz.</p>${renderParseErrors(fixtureErrors, historyErrors)}</div>`;
+    return;
+  }
+
+  const baseline = computeLeagueBaseline(existing);
+  const strengths = computeTeamStrengths(existing, baseline);
+  const settings = getSettings();
+
+  const legs = [];
+  const projections = [];
+  fixtures.forEach(f=>{
+    const proj = projectFixture(f.ev, f.deplasman, strengths, baseline);
+    projections.push(proj);
+    const mac = `${f.ev} - ${f.deplasman}`;
+    if(f.oran15!==''){
+      legs.push(evaluateLeg(mac, '1.5 Üst', proj.pOver15, parseFloat(f.oran15), proj));
+    }
+    if(f.oranKg!==''){
+      legs.push(evaluateLeg(mac, 'KG Var', proj.pBtts, parseFloat(f.oranKg), proj));
+    }
+  });
+
+  const playable = legs.filter(l=> !l.noData && l.odds>=settings.minOdds && l.odds<=settings.maxOdds);
+  const value = playable.filter(l=> l.edge >= settings.minEdge && l.guvenScore >= settings.minGuvenScore);
+  const coupons = buildCoupons(legs, settings);
+
+  const stats = { analyzed: legs.length, playable: playable.length, value: value.length, notRecommended: legs.length - playable.length };
+
+  lastLegs = legs; lastCoupons = coupons; lastStats = stats;
+
+  const analysisRecord = { date: todayKey(), legs, coupons, stats, projections };
+  saveLastAnalysis(analysisRecord);
+  saveReport(todayKey(), analysisRecord);
+
+  renderResults(legs, coupons, stats, projections, fixtureErrors, historyErrors);
+}
+
+function renderParseErrors(fixtureErrors, historyErrors){
+  const all = [...fixtureErrors.map(e=>({...e,kind:'Maç Verisi'})), ...historyErrors.map(e=>({...e,kind:'Takım Geçmişi'}))];
+  if(all.length===0) return '';
+  return `<div class="panel" style="border-color:var(--risk);">
+    <h2 style="color:var(--risk);">Okunamayan Satırlar (${all.length})</h2>
+    <p class="hint">Bu satırlar formata uymadığı için atlandı — düzeltip tekrar analiz edebilirsin.</p>
+    <div class="table-scroll"><table><thead><tr><th>Kaynak</th><th>Satır</th><th>İçerik</th><th>Sorun</th></tr></thead><tbody>
+    ${all.map(e=>`<tr><td>${e.kind}</td><td>${e.line}</td><td><code>${escapeHtml(e.text)}</code></td><td>${e.reason}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
+function renderResults(legs, coupons, stats, projections, fixtureErrors, historyErrors){
+  const el = document.getElementById('resultsZone');
+  let html = '';
+
+  html += `<div class="stat-row">
+    <div class="stat"><div class="lbl">Piyasa</div><div class="num">Normal</div></div>
+    <div class="stat"><div class="lbl">Analiz Edilen</div><div class="num num-gold">${stats.analyzed} Pazar</div></div>
+    <div class="stat"><div class="lbl">Oynanabilir</div><div class="num num-growth">${stats.playable}</div></div>
+    <div class="stat"><div class="lbl">Value (Pozitif Edge)</div><div class="num num-growth">${stats.value}</div></div>
+  </div>`;
+
+  // Spotlight: en yuksek yildizli pozitif-edge bacak
+  const spotlight = [...legs].filter(l=>!l.noData).sort((a,b)=>(b.stars-a.stars)||(b.edge-a.edge))[0];
+  if(spotlight && spotlight.stars>=3){
+    html += renderSpotlight(spotlight, projections);
+  }
+
+  html += `<div class="panel"><h2>Maç Analizi</h2><div class="table-scroll"><table>
+    <thead><tr><th>Maç</th><th>Form (Ev/Dep)</th><th>Poisson (λ)</th><th>Tahmini Skor</th><th>Güven</th></tr></thead><tbody>`;
+  projections.forEach(p=>{
+    html += `<tr>
+      <td>${p.evTakim} - ${p.depTakim}</td>
+      <td>${formStr(p.evForm)} / ${formStr(p.depForm)}</td>
+      <td>${p.lambdaTotal}</td>
+      <td>${p.tahminiSkor}</td>
+      <td class="tag">${p.guven}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div></div>`;
+
+  html += `<div class="panel"><h2>Tüm Bacaklar</h2><div class="table-scroll"><table>
+    <thead><tr><th>Maç</th><th>Pazar</th><th>Model</th><th>Oran</th><th>Edge</th><th>EV</th><th>Risk</th><th>Yıldız</th></tr></thead><tbody>`;
+  [...legs].sort((a,b)=>b.edge-a.edge).forEach(l=>{
+    html += `<tr>
+      <td>${l.mac}</td><td>${l.pazar}</td><td>${(l.modelProb*100).toFixed(1)}%</td><td>${l.odds}</td>
+      <td class="${l.edge>=0?'edge-pos':'edge-neg'}">${(l.edge*100).toFixed(1)}%</td>
+      <td class="${l.ev>=0?'edge-pos':'edge-neg'}">${l.ev>=0?'+':''}${(l.ev*100).toFixed(1)}%</td>
+      <td>${l.risk}</td><td class="stars">${starString(l.stars)}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div></div>`;
+
+  html += `<div class="panel"><h2>Kupon Önerileri</h2>`;
+  if(coupons.length===0){
+    html += `<div class="no-play-banner">BUGÜN OYNAMA</div>
+      <p class="empty-note" style="margin-top:10px;">Bugün piyasada yeterli değer bulunamadı. Ayarlar sayfasındaki eşiklere (minimum edge/güven/oran aralığı) uyan bir kombinasyon yok — bu, sistemin çalışmadığı anlamına gelmez, tam tersine gereksiz risk almanı önlüyor.</p>`;
+  } else {
+    coupons.forEach((c,i)=>{
+      html += `<div class="coupon-card"><div class="head">
+        <h3>Kupon ${i+1} <span class="stars">${starString(c.stars)}</span></h3>
+        <span class="tag">${c.risk} Risk</span>
+      </div>`;
+      c.legs.forEach(l=>{
+        html += `<div class="leg-line">${l.mac} → <b>${l.pazar}</b> @ ${l.odds}</div>`;
+      });
+      html += `<div class="meta-row">
+        <span>Tahmini Başarı: ${(c.basariTahmini*100).toFixed(0)}%</span>
+        <span>Toplam Oran: ${c.totalOdds}</span>
+        <span>Ort. Edge: ${(c.avgEdge*100).toFixed(1)}%</span>
+      </div></div>`;
+    });
+  }
+  html += `</div>`;
+
+  html += `<div class="panel"><h2>🧠 AI Bugünün Yorumu</h2><div class="ai-comment">
+    ${generateDailyComment(legs, coupons, stats).map(p=>`<p>${p}</p>`).join('')}
+  </div></div>`;
+
+  html += renderParseErrors(fixtureErrors, historyErrors);
+
+  html += `<div class="btn-row no-print" style="margin-top:18px;">
+    <button class="ghost" onclick="exportTxt()">TXT indir</button>
+    <button class="ghost" onclick="printReport()">PDF oluştur (Yazdır)</button>
+    <button class="ghost" onclick="exportWhatsApp()">WhatsApp'a gönder</button>
+  </div>`;
+
+  el.innerHTML = html;
+}
+
+function formStr(form){
+  if(!form) return '<span style="color:var(--muted)">veri yok</span>';
+  const colored = form.split('').map(c=>{
+    const cls = c==='W'?'w':(c==='L'?'l':'d');
+    return `<span class="${cls}">${c}</span>`;
+  }).join('');
+  return `<span class="form-string">${colored}</span>`;
+}
+
+function renderSpotlight(leg, projections){
+  const proj = projections.find(p=>`${p.evTakim} - ${p.depTakim}`===leg.mac);
+  const team = leg.pazar==='1.5 Üst' || leg.pazar==='KG Var' ? leg.mac.split(' - ')[0] : leg.mac;
+  return `<div class="spotlight-card" style="margin-bottom:18px;">
+    <div class="tag">★ En Güvenli Maç</div>
+    <div class="team">${leg.mac}</div>
+    <div class="stars">${starString(leg.stars)}</div>
+    <div class="spotlight-grid">
+      <div class="cell"><div class="k">Pazar</div><div class="v">${leg.pazar}</div></div>
+      <div class="cell"><div class="k">Edge</div><div class="v edge-pos">+${(leg.edge*100).toFixed(0)}%</div></div>
+      <div class="cell"><div class="k">Tahmini Olasılık</div><div class="v">${(leg.modelProb*100).toFixed(0)}%</div></div>
+      <div class="cell"><div class="k">Güven</div><div class="v">${leg.guvenScore}</div></div>
+      ${proj?`<div class="cell"><div class="k">İç Saha Gol Ort.</div><div class="v">${proj.evGolOrt!==null?proj.evGolOrt.toFixed(2):'—'}</div></div>
+      <div class="cell"><div class="k">Deplasman Gol Ort.</div><div class="v">${proj.depGolOrt!==null?proj.depGolOrt.toFixed(2):'—'}</div></div>
+      <div class="cell"><div class="k">Poisson (λ)</div><div class="v">${proj.lambdaTotal}</div></div>
+      <div class="cell"><div class="k">Tahmini Skor</div><div class="v">${proj.tahminiSkor}</div></div>`:''}
+    </div>
+  </div>`;
+}
+
+function buildReportText(){
+  const lines = [];
+  lines.push(`FOOTBALL AI PRO — ${todayKey()}`);
+  lines.push('='.repeat(40));
+  lines.push(`Analiz edilen: ${lastStats.analyzed} pazar | Oynanabilir: ${lastStats.playable} | Value: ${lastStats.value}`);
+  lines.push('');
+  if(lastCoupons.length===0){
+    lines.push('BUGÜN OYNAMA — yeterli değer bulunamadı.');
+  } else {
+    lastCoupons.forEach((c,i)=>{
+      lines.push(`Kupon ${i+1} — ${starString(c.stars)} — Toplam Oran: ${c.totalOdds} — Risk: ${c.risk}`);
+      c.legs.forEach(l=> lines.push(`  ${l.mac} -> ${l.pazar} @ ${l.odds} (edge +${(l.edge*100).toFixed(1)}%)`));
+      lines.push('');
+    });
+  }
+  lines.push('---');
+  lines.push('Not: İstatistiksel model çıktısıdır, kazanç garantisi değildir.');
+  return lines.join('\n');
+}
+
+function exportTxt(){
+  downloadTextFile(`analiz_${todayKey().replace(/\./g,'_')}.txt`, buildReportText());
+}
+function exportWhatsApp(){
+  sendToWhatsApp(buildReportText());
+}
+</script>
+</body>
+</html>

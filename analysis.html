@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Football AI Pro — Maç Analizi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+  <div class="main">
+    <div class="page-header">
+      <h1>Maç Analizi</h1>
+      <div class="sub" id="dateLabel"></div>
+    </div>
+    <div id="content"></div>
+  </div>
+</div>
+
+<script src="js/storage.js"></script>
+<script src="js/poisson.js"></script>
+<script src="js/edge.js"></script>
+<script src="js/app.js"></script>
+<script>
+initShell('analysis');
+const analysis = getLastAnalysis();
+document.getElementById('dateLabel').textContent = analysis ? `Son analiz: ${analysis.date}` : 'Henüz analiz yapılmadı';
+
+const el = document.getElementById('content');
+if(!analysis){
+  el.innerHTML = `<div class="panel"><p class="empty-note">Henüz bir analiz yapılmadı. Dashboard sayfasından maç verisi girip "Analiz Et" butonuna bas.</p></div>`;
+} else {
+  let html = `<div class="panel"><h2>Maç Bazlı Detay</h2><div class="table-scroll"><table>
+    <thead><tr><th>Maç</th><th>Ev Form</th><th>Dep Form</th><th>Ev Gol Ort.</th><th>Dep Gol Ort.</th><th>Poisson λ</th><th>Tahmini Skor</th><th>Güven</th></tr></thead><tbody>`;
+  analysis.projections.forEach(p=>{
+    html += `<tr>
+      <td>${p.evTakim} - ${p.depTakim}</td>
+      <td>${formStr(p.evForm)}</td><td>${formStr(p.depForm)}</td>
+      <td>${p.evGolOrt!==null?p.evGolOrt.toFixed(2):'—'}</td>
+      <td>${p.depGolOrt!==null?p.depGolOrt.toFixed(2):'—'}</td>
+      <td>${p.lambdaTotal}</td><td>${p.tahminiSkor}</td><td class="tag">${p.guven}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div></div>`;
+
+  html += `<div class="panel"><h2>Tüm Bacaklar (Model vs Oran)</h2><div class="table-scroll"><table>
+    <thead><tr><th>Maç</th><th>Pazar</th><th>Model</th><th>Oran</th><th>İma Edilen</th><th>Edge</th><th>EV</th><th>Risk</th><th>Yıldız</th></tr></thead><tbody>`;
+  [...analysis.legs].sort((a,b)=>b.edge-a.edge).forEach(l=>{
+    html += `<tr>
+      <td>${l.mac}</td><td>${l.pazar}</td><td>${(l.modelProb*100).toFixed(1)}%</td><td>${l.odds}</td>
+      <td>${(l.implied*100).toFixed(1)}%</td>
+      <td class="${l.edge>=0?'edge-pos':'edge-neg'}">${(l.edge*100).toFixed(1)}%</td>
+      <td class="${l.ev>=0?'edge-pos':'edge-neg'}">${l.ev>=0?'+':''}${(l.ev*100).toFixed(1)}%</td>
+      <td>${l.risk}</td><td class="stars">${starString(l.stars)}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div></div>`;
+  el.innerHTML = html;
+}
+
+function formStr(form){
+  if(!form) return '<span style="color:var(--muted)">veri yok</span>';
+  const colored = form.split('').map(c=>{
+    const cls = c==='W'?'w':(c==='L'?'l':'d');
+    return `<span class="${cls}">${c}</span>`;
+  }).join('');
+  return `<span class="form-string">${colored}</span>`;
+}
+</script>
+</body>
+</html>

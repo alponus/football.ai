@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Football AI Pro — Ayarlar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+  <div class="main">
+    <div class="page-header"><h1>Ayarlar</h1></div>
+
+    <div class="panel">
+      <h2>Kupon Eşikleri</h2>
+      <p class="hint">Bu değerler, Dashboard'daki kupon motorunun hangi bacakları/kombinasyonları öneriye dahil edeceğini belirler.</p>
+      <div class="field"><label>Minimum Edge (%) <span id="v_minEdge"></span></label>
+        <input type="range" id="minEdge" min="0" max="30" step="1"></div>
+      <div class="field"><label>Minimum Güven Skoru (0-100) <span id="v_minGuven"></span></label>
+        <input type="range" id="minGuvenScore" min="0" max="100" step="5"></div>
+      <div class="field"><label>Minimum Oran <span id="v_minOdds"></span></label>
+        <input type="range" id="minOdds" min="1.01" max="3" step="0.05"></div>
+      <div class="field"><label>Maksimum Oran <span id="v_maxOdds"></span></label>
+        <input type="range" id="maxOdds" min="1.5" max="5" step="0.05"></div>
+      <div class="field"><label>Hedef Toplam Oran — Alt Sınır <span id="v_targetMin"></span></label>
+        <input type="range" id="targetMin" min="2" max="8" step="0.1"></div>
+      <div class="field"><label>Hedef Toplam Oran — Üst Sınır <span id="v_targetMax"></span></label>
+        <input type="range" id="targetMax" min="3" max="12" step="0.1"></div>
+      <div class="field"><label>Maksimum Bacak Sayısı <span id="v_maxLegs"></span></label>
+        <input type="range" id="maxLegs" min="1" max="6" step="1"></div>
+      <div class="field"><label>Kupon Sayısı <span id="v_kuponSayisi"></span></label>
+        <input type="range" id="kuponSayisi" min="1" max="10" step="1"></div>
+      <button class="primary" onclick="saveAll()">Kaydet</button>
+      <span class="save-note" id="saveNote"></span>
+    </div>
+
+    <div class="panel">
+      <h2>WhatsApp</h2>
+      <p class="hint">Buraya kendi numaranı girersen "WhatsApp'a Gönder" butonu direkt seninle olan sohbeti açar (uluslararası format, örn: 905XXXXXXXXX). Boş bırakırsan WhatsApp kime göndereceğini sorar.</p>
+      <div class="field"><label>Telefon Numarası</label><input type="text" id="whatsappNumber" placeholder="905XXXXXXXXX"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Görünüm</h2>
+      <div class="btn-row">
+        <button class="ghost" onclick="setTheme('dark')">Koyu</button>
+        <button class="ghost" onclick="setTheme('light')">Açık</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Veri Yedekleme</h2>
+      <p class="hint">Tüm veriler bu tarayıcıda saklanır. Başka bir bilgisayara taşımak veya yedek almak için dışa aktar / içe aktar kullan.</p>
+      <div class="btn-row">
+        <button class="ghost" onclick="exportAllData()">Tüm Veriyi JSON Olarak İndir</button>
+        <label class="ghost" style="cursor:pointer;">İçe Aktar
+          <input type="file" accept=".json" style="display:none;" onchange="importAllData(event)">
+        </label>
+        <button class="ghost" style="border-color:var(--risk);color:var(--risk);" onclick="clearAllData()">Tüm Veriyi Sil</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/storage.js"></script>
+<script src="js/app.js"></script>
+<script>
+initShell('settings');
+
+const fields = ['minEdge','minGuvenScore','minOdds','maxOdds','targetMin','targetMax','maxLegs','kuponSayisi'];
+function loadIntoForm(){
+  const s = getSettings();
+  document.getElementById('minEdge').value = s.minEdge*100;
+  document.getElementById('minGuvenScore').value = s.minGuvenScore;
+  document.getElementById('minOdds').value = s.minOdds;
+  document.getElementById('maxOdds').value = s.maxOdds;
+  document.getElementById('targetMin').value = s.targetMin;
+  document.getElementById('targetMax').value = s.targetMax;
+  document.getElementById('maxLegs').value = s.maxLegs;
+  document.getElementById('kuponSayisi').value = s.kuponSayisi;
+  document.getElementById('whatsappNumber').value = s.whatsappNumber || '';
+  updateLabels();
+}
+function updateLabels(){
+  document.getElementById('v_minEdge').textContent = document.getElementById('minEdge').value + '%';
+  document.getElementById('v_minGuven').textContent = document.getElementById('minGuvenScore').value;
+  document.getElementById('v_minOdds').textContent = document.getElementById('minOdds').value;
+  document.getElementById('v_maxOdds').textContent = document.getElementById('maxOdds').value;
+  document.getElementById('v_targetMin').textContent = document.getElementById('targetMin').value;
+  document.getElementById('v_targetMax').textContent = document.getElementById('targetMax').value;
+  document.getElementById('v_maxLegs').textContent = document.getElementById('maxLegs').value;
+  document.getElementById('v_kuponSayisi').textContent = document.getElementById('kuponSayisi').value;
+}
+['minEdge','minGuvenScore','minOdds','maxOdds','targetMin','targetMax','maxLegs','kuponSayisi'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', updateLabels);
+});
+
+function saveAll(){
+  const s = {
+    minEdge: parseFloat(document.getElementById('minEdge').value)/100,
+    minGuvenScore: parseFloat(document.getElementById('minGuvenScore').value),
+    minOdds: parseFloat(document.getElementById('minOdds').value),
+    maxOdds: parseFloat(document.getElementById('maxOdds').value),
+    targetMin: parseFloat(document.getElementById('targetMin').value),
+    targetMax: parseFloat(document.getElementById('targetMax').value),
+    maxLegs: parseInt(document.getElementById('maxLegs').value),
+    kuponSayisi: parseInt(document.getElementById('kuponSayisi').value),
+    whatsappNumber: document.getElementById('whatsappNumber').value.trim(),
+  };
+  saveSettings(s);
+  document.getElementById('saveNote').textContent = 'Kaydedildi ✓';
+  setTimeout(()=>document.getElementById('saveNote').textContent='', 2000);
+}
+
+function setTheme(t){
+  fai_set('fai_theme', t);
+  document.documentElement.setAttribute('data-theme', t);
+}
+
+function exportAllData(){
+  const data = {
+    settings: getSettings(),
+    teamHistory: getTeamHistory(),
+    reports: getReports(),
+    loggedResults: getLoggedResults(),
+    exportedAt: new Date().toISOString(),
+  };
+  downloadTextFile('football_ai_pro_yedek.json', JSON.stringify(data, null, 2), 'application/json');
+}
+function importAllData(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const data = JSON.parse(e.target.result);
+      if(data.settings) saveSettings(data.settings);
+      if(data.teamHistory) saveTeamHistory(data.teamHistory);
+      if(data.reports) fai_set(STORE_KEYS.reports, data.reports);
+      if(data.loggedResults) fai_set(STORE_KEYS.loggedResults, data.loggedResults);
+      alert('Veri başarıyla içe aktarıldı. Sayfa yenileniyor.');
+      location.reload();
+    }catch(err){
+      alert('Dosya okunamadı: geçerli bir yedek JSON dosyası seç.');
+    }
+  };
+  reader.readAsText(file);
+}
+function clearAllData(){
+  if(confirm('Tüm ayarlar, geçmiş ve raporlar silinecek. Emin misin?')){
+    localStorage.clear();
+    location.reload();
+  }
+}
+
+loadIntoForm();
+</script>
+</body>
+</html>
