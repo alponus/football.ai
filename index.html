@@ -30,6 +30,10 @@
     <div id="otomatikPanel" class="panel">
       <h2>Bugünün Analizi</h2>
       <p class="hint">API'den o günün tüm fikstürünü, takım istatistiklerini ve oranları çekip mevcut analiz motoruna bağlar. Lig sayısına göre birkaç dakika sürebilir.</p>
+      <div class="checkbox-row" style="margin-bottom:14px;">
+        <label><input type="checkbox" id="onlyMajorLeagues" checked> Sadece popüler ligler (İngiltere, İspanya, İtalya, Almanya, Fransa, Süper Lig, şampiyonlar ligi vb.)</label>
+      </div>
+      <p class="hint" style="margin-top:-8px;">Not: Küçük liglerde API'nin oran (odds) verisi neredeyse hiç yok — "tüm ligler" denemesinde 202 maçtan sadece 1 tanesinde oran bulundu. Anlamlı sonuç almak için bu kutuyu işaretli bırakman önerilir.</p>
       <div class="btn-row">
         <button class="primary" id="autoAnalyzeBtn" onclick="runAutoAnalysis()">BUGÜNÜ ANALİZ ET</button>
         <span class="save-note" id="apiStatus"></span>
@@ -127,9 +131,23 @@ async function runAutoAnalysis(){
     const totalRequestBudget = parseInt(fixData.toplamIstekHakki)||null;
     let usedRequests = 1;
 
-    const maclar = fixData.maclar || [];
-    if(maclar.length===0){
+    const maclarHam = fixData.maclar || [];
+    if(maclarHam.length===0){
       resultEl.innerHTML = `<p class="empty-note">${fixData.tarih} için maç bulunamadı.</p>`;
+      btn.disabled = false;
+      document.getElementById('autoProgressZone').innerHTML = '';
+      return;
+    }
+
+    // Popüler lig filtresi (opsiyonel) - kucuk liglerde oran verisi neredeyse hic yok
+    const MAJOR_LEAGUE_IDS = new Set([39,40,140,135,78,61,88,94,203,2,3,848,1]);
+    // 39:Premier League 40:Championship 140:La Liga 135:Serie A 78:Bundesliga
+    // 61:Ligue 1 88:Eredivisie 94:Primeira Liga 203:Süper Lig 2:UCL 3:UEL 848:Conference League 1:Dünya Kupası
+    const onlyMajor = document.getElementById('onlyMajorLeagues').checked;
+    const maclar = onlyMajor ? maclarHam.filter(m=>MAJOR_LEAGUE_IDS.has(m.league.id)) : maclarHam;
+
+    if(maclar.length===0){
+      resultEl.innerHTML = `<p class="empty-note">Seçili filtreyle (popüler ligler) bugün maç bulunamadı. Filtreyi kaldırıp tekrar dene.</p>`;
       btn.disabled = false;
       document.getElementById('autoProgressZone').innerHTML = '';
       return;
@@ -264,8 +282,9 @@ function renderAutoResults(legs, coupons, stats, projections, el){
 
   html += `<div class="panel"><h2>Kupon Önerileri</h2>`;
   if(coupons.length===0){
-    html += `<div class="no-play-banner">BUGÜN OYNAMA</div>
-      <p class="empty-note" style="margin-top:10px;">Bugün piyasada Ayarlar'daki eşiklere uyan bir kombinasyon bulunamadı.</p>`;
+    const oddsCoverage = legs.length;
+    html += `<div class="no-play-banner" style="color:var(--gold);border-color:var(--gold);background:#241D14;">Bugün hedef oran aralığına (4.5–6.5) ulaşan bir kombinasyon kurulamadı</div>
+      <p class="empty-note" style="margin-top:10px;">Bunun sebebi negatif edge DEĞİL — API'den oran verisi alınabilen bacak sayısı (${oddsCoverage}) yeterli çeşitlilikte kombinasyon kurmaya yetmedi. Aşağıdaki "En Güçlü Bacaklar" tablosunda tüm hesaplanan olasılıkları (edge negatif olsa bile) görebilir, kendi kuponunu kendin de kurabilirsin — karar sana ait.</p>`;
   } else {
     coupons.forEach((c,i)=>{
       html += `<div class="coupon-card"><div class="head">

@@ -20,10 +20,10 @@ const STORE_KEYS = {
 };
 
 const DEFAULT_SETTINGS = {
-  minEdge: 0.05,
-  minGuvenScore: 45,
-  minOdds: 1.30,
-  maxOdds: 2.20,
+  minEdge: -1,          // Varsayilan: edge filtre DEGIL, sadece bilgi. -1 = hicbir zaman engellemez.
+  minGuvenScore: 0,     // Varsayilan: guven skoru da engellemez, sadece gosterilir.
+  minOdds: 1.10,
+  maxOdds: 3.00,
   targetMin: 4.5,
   targetMax: 6.5,
   maxLegs: 4,

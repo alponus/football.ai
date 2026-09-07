@@ -17,10 +17,10 @@
 
     <div class="panel">
       <h2>Kupon Eşikleri</h2>
-      <p class="hint">Bu değerler, Dashboard'daki kupon motorunun hangi bacakları/kombinasyonları öneriye dahil edeceğini belirler.</p>
-      <div class="field"><label>Minimum Edge (%) <span id="v_minEdge"></span></label>
-        <input type="range" id="minEdge" min="0" max="30" step="1"></div>
-      <div class="field"><label>Minimum Güven Skoru (0-100) <span id="v_minGuven"></span></label>
+      <p class="hint">Bu değerler artık kupon oluşumunu ENGELLEMİYOR — sadece sıralama/etiketleme için kullanılıyor. Sistem her zaman bulduğu en iyi kombinasyonları gösterir, kararı sen verirsin (negatif edge de olsa görürsün, açıkça işaretlenir).</p>
+      <div class="field"><label>Minimum Edge (bilgi amaçlı sıralama, artık engel değil) <span id="v_minEdge"></span></label>
+        <input type="range" id="minEdge" min="-100" max="50" step="1"></div>
+      <div class="field"><label>Minimum Güven Skoru (bilgi amaçlı, artık engel değil) <span id="v_minGuven"></span></label>
         <input type="range" id="minGuvenScore" min="0" max="100" step="5"></div>
       <div class="field"><label>Minimum Oran <span id="v_minOdds"></span></label>
         <input type="range" id="minOdds" min="1.01" max="3" step="0.05"></div>
