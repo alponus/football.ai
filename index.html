@@ -28,13 +28,14 @@
     </div>
 
     <div id="otomatikPanel" class="panel">
-      <h2>Faz 1 Testi — Bugünün Fikstürü</h2>
-      <p class="hint">Bu, tam analiz değil — sadece API bağlantısının çalışıp çalışmadığını doğrulayan bir test. "Getir" butonuna basınca bugünün (Europe/Istanbul saatiyle) tüm maçları listelenmeli.</p>
+      <h2>Bugünün Analizi</h2>
+      <p class="hint">API'den o günün tüm fikstürünü, takım istatistiklerini ve oranları çekip mevcut analiz motoruna bağlar. Lig sayısına göre birkaç dakika sürebilir.</p>
       <div class="btn-row">
-        <button class="primary" onclick="testFixtures()">Bugünün Fikstürünü Getir</button>
+        <button class="primary" id="autoAnalyzeBtn" onclick="runAutoAnalysis()">BUGÜNÜ ANALİZ ET</button>
         <span class="save-note" id="apiStatus"></span>
       </div>
-      <div id="fixturesTestResult" style="margin-top:14px;"></div>
+      <div id="autoProgressZone" style="margin-top:14px;"></div>
+      <div id="autoResultsZone"></div>
     </div>
 
     <div id="manuelPanel" style="display:none;">
@@ -83,6 +84,7 @@ Galatasaray | Deplasman | Alanyaspor | 2-0 | 2026-08-17"></textarea>
 <script src="js/parser.js"></script>
 <script src="js/coupons.js"></script>
 <script src="js/statistics.js"></script>
+<script src="js/apiAdapter.js"></script>
 <script src="js/app.js"></script>
 <script>
 initShell('dashboard');
@@ -94,51 +96,201 @@ function switchMode(mode){
   document.getElementById('manuelPanel').style.display = mode==='manuel' ? 'block' : 'none';
 }
 
-async function testFixtures(){
+function setProgressLine(text){
+  document.getElementById('autoProgressZone').innerHTML = `
+    <div class="progress-wrap">
+      <div class="progress-label"><span>${text}</span></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:100%;"></div></div>
+    </div>`;
+}
+
+async function runAutoAnalysis(){
+  const btn = document.getElementById('autoAnalyzeBtn');
   const statusEl = document.getElementById('apiStatus');
-  const resultEl = document.getElementById('fixturesTestResult');
-  statusEl.textContent = 'Sorgulanıyor...';
+  const resultEl = document.getElementById('autoResultsZone');
+  btn.disabled = true;
   resultEl.innerHTML = '';
+  statusEl.textContent = '';
 
   try{
-    const res = await fetch('/api/fixtures');
-    const data = await res.json();
+    // 1) FIKSTUR
+    setProgressLine('Fikstür alınıyor...');
+    const fixRes = await fetch('/api/fixtures');
+    const fixData = await fixRes.json();
 
-    if(data.hata){
-      statusEl.textContent = '';
-      let mesaj = data.mesaj;
-      if(data.hata==='SUNUCU_AYARI_EKSIK'){
-        resultEl.innerHTML = `<div class="no-play-banner">API_FOOTBALL_KEY ayarlanmamış</div><p class="empty-note">${mesaj}</p>`;
-      } else if(data.hata==='API_LIMIT_VEYA_HATA'){
-        resultEl.innerHTML = `<div class="no-play-banner">API günlük kullanım limitine yaklaşıldı</div><p class="empty-note">${mesaj}</p>`;
-      } else if(data.hata==='BAGLANTI_HATASI'){
-        resultEl.innerHTML = `<div class="no-play-banner">API verisine şu anda ulaşılamıyor</div><p class="empty-note">${mesaj}</p>`;
-      } else {
-        resultEl.innerHTML = `<p class="empty-note">${mesaj}</p>`;
-      }
+    if(fixData.hata){
+      renderApiError(fixData, resultEl);
+      btn.disabled = false;
+      document.getElementById('autoProgressZone').innerHTML = '';
+      return;
+    }
+    const totalRequestBudget = parseInt(fixData.toplamIstekHakki)||null;
+    let usedRequests = 1;
+
+    const maclar = fixData.maclar || [];
+    if(maclar.length===0){
+      resultEl.innerHTML = `<p class="empty-note">${fixData.tarih} için maç bulunamadı.</p>`;
+      btn.disabled = false;
+      document.getElementById('autoProgressZone').innerHTML = '';
       return;
     }
 
-    statusEl.textContent = `✓ Kalan istek: ${data.kalanIstek ?? '—'} / ${data.toplamIstekHakki ?? '—'}`;
-
-    if(!data.maclar || data.maclar.length===0){
-      resultEl.innerHTML = `<p class="empty-note">${data.tarih} tarihinde maç bulunamadı (ya da API henüz fikstürü yayınlamadı).</p>`;
-      return;
-    }
-
-    let html = `<p class="hint">${data.tarih} — Toplam ${data.toplamMac} maç bulundu. İlk 15 tanesi:</p>
-      <div class="table-scroll"><table><thead><tr><th>Lig</th><th>Ev Sahibi</th><th>Deplasman</th><th>Saat</th></tr></thead><tbody>`;
-    data.maclar.slice(0,15).forEach(m=>{
-      const saat = new Date(m.fixture.date).toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',timeZone:'Europe/Istanbul'});
-      html += `<tr><td>${m.league.name} (${m.league.country})</td><td>${m.teams.home.name}</td><td>${m.teams.away.name}</td><td>${saat}</td></tr>`;
+    // 2) BENZERSIZ TAKIM+LIG+SEZON LISTESI
+    setProgressLine(`${maclar.length} maç bulundu. Takım verileri hazırlanıyor...`);
+    const teamKeySet = new Map(); // key -> {team, league, season}
+    maclar.forEach(m=>{
+      [
+        {team:m.teams.home.id, league:m.league.id, season:m.league.season},
+        {team:m.teams.away.id, league:m.league.id, season:m.league.season},
+      ].forEach(t=>{
+        const key = `${t.team}-${t.league}-${t.season}`;
+        if(!teamKeySet.has(key)) teamKeySet.set(key, t);
+      });
     });
-    html += `</tbody></table></div>`;
-    resultEl.innerHTML = html;
+    const uniqueTeams = Array.from(teamKeySet.entries());
+
+    // 3) TAKIM ISTATISTIKLERI (cache + sinirli paralellik)
+    const statsCache = new Map();
+    await concurrencyMap(uniqueTeams, 8, async ([key, t])=>{
+      const r = await fetch(`/api/team-stats?team=${t.team}&league=${t.league}&season=${t.season}`);
+      const d = await r.json();
+      usedRequests++;
+      statsCache.set(key, (d && d.stats) ? extractTeamGoalProfile(d.stats) : null);
+    }, (done,total)=>{
+      setProgressLine(`Takım verileri hazırlanıyor... ${done}/${total}`);
+    });
+
+    // 4) ORANLAR (H2H su an icin atlanildi - Faz 3'te guven puanina eklenecek)
+    setProgressLine(`Oranlar alınıyor...`);
+    const oddsCache = new Map();
+    await concurrencyMap(maclar, 8, async (m)=>{
+      const r = await fetch(`/api/odds?fixture=${m.fixture.id}`);
+      const d = await r.json();
+      usedRequests++;
+      oddsCache.set(m.fixture.id, (d && d.odds) ? extractMarketOdds(d.odds) : {oran15:null, oranKg:null});
+    }, (done,total)=>{
+      setProgressLine(`Oranlar alınıyor... ${done}/${total}`);
+    });
+
+    // 5) ANALIZ
+    setProgressLine('Analiz ediliyor...');
+    const projections = [];
+    const legs = [];
+    maclar.forEach(m=>{
+      const homeKey = `${m.teams.home.id}-${m.league.id}-${m.league.season}`;
+      const awayKey = `${m.teams.away.id}-${m.league.id}-${m.league.season}`;
+      const hp = statsCache.get(homeKey);
+      const ap = statsCache.get(awayKey);
+      const proj = projectFixtureFromApiStats(m.teams.home.name, m.teams.away.name, hp, ap);
+      proj.lig = `${m.league.name} (${m.league.country})`;
+      proj.fixtureId = m.fixture.id;
+      projections.push(proj);
+
+      if(proj.noData) return; // veri yoksa bacak uretme
+
+      const odds = oddsCache.get(m.fixture.id) || {oran15:null, oranKg:null};
+      const mac = `${m.teams.home.name} - ${m.teams.away.name}`;
+      if(odds.oran15!==null){
+        legs.push(evaluateLeg(mac, '1.5 Üst', proj.pOver15, odds.oran15, proj));
+      }
+      if(odds.oranKg!==null){
+        legs.push(evaluateLeg(mac, 'KG Var', proj.pBtts, odds.oranKg, proj));
+      }
+    });
+
+    // 6) KUPON MOTORU
+    setProgressLine('Kupon hazırlanıyor...');
+    const settings = getSettings();
+    const playable = legs.filter(l=> !l.noData && l.odds>=settings.minOdds && l.odds<=settings.maxOdds);
+    const value = playable.filter(l=> l.edge >= settings.minEdge && l.guvenScore >= settings.minGuvenScore);
+    const coupons = buildCoupons(legs, settings);
+    const stats = {
+      analyzed: maclar.length, playable: playable.length, value: value.length,
+      notRecommended: maclar.length - playable.length,
+      veriEksik: projections.filter(p=>p.noData).length,
+      oranEksik: maclar.length - legs.length/2, // kabaca
+    };
+
+    document.getElementById('autoProgressZone').innerHTML = '';
+    statusEl.textContent = totalRequestBudget ? `İstek kullanımı: ~${usedRequests} (günlük limit ${totalRequestBudget})` : '';
+
+    const analysisRecord = { date: todayKey(), legs, coupons, stats, projections };
+    saveLastAnalysis(analysisRecord);
+    saveReport(todayKey(), analysisRecord);
+
+    renderAutoResults(legs, coupons, stats, projections, resultEl);
 
   }catch(e){
-    statusEl.textContent = '';
-    resultEl.innerHTML = `<div class="no-play-banner">Bağlantı hatası</div><p class="empty-note">Sunucuya ulaşılamadı: ${e.message}</p>`;
+    resultEl.innerHTML = `<div class="no-play-banner">Beklenmeyen hata</div><p class="empty-note">${e.message}</p>`;
   }
+  document.getElementById('autoProgressZone').innerHTML = '';
+  btn.disabled = false;
+}
+
+function renderApiError(data, el){
+  const titles = {
+    SUNUCU_AYARI_EKSIK: 'API_FOOTBALL_KEY ayarlanmamış',
+    API_LIMIT_VEYA_HATA: 'API günlük kullanım limitine yaklaşıldı',
+    BAGLANTI_HATASI: 'API verisine şu anda ulaşılamıyor',
+  };
+  el.innerHTML = `<div class="no-play-banner">${titles[data.hata]||'Hata'}</div><p class="empty-note">${data.mesaj}</p>`;
+}
+
+function renderAutoResults(legs, coupons, stats, projections, el){
+  let html = '';
+  html += `<div class="stat-row">
+    <div class="stat"><div class="lbl">Toplam Maç</div><div class="num num-gold">${stats.analyzed}</div></div>
+    <div class="stat"><div class="lbl">Analiz Edilebilen</div><div class="num num-growth">${stats.analyzed - stats.veriEksik}</div></div>
+    <div class="stat"><div class="lbl">Verisi Eksik</div><div class="num num-risk">${stats.veriEksik}</div></div>
+    <div class="stat"><div class="lbl">Kupon Sayısı</div><div class="num num-gold">${coupons.length}</div></div>
+  </div>`;
+
+  const spotlight = [...legs].filter(l=>!l.noData).sort((a,b)=>(b.stars-a.stars)||(b.edge-a.edge))[0];
+  if(spotlight && spotlight.stars>=3){
+    html += renderSpotlight(spotlight, projections);
+  }
+
+  const withOdds = [...legs].sort((a,b)=>b.edge-a.edge);
+  html += `<div class="panel"><h2>En Güçlü ${Math.min(30,withOdds.length)} Bacak</h2>
+    <p class="hint">Toplam ${legs.length} bacak hesaplandı, oran karşılaştırması yapılabilenler arasından en yüksek edge'e sahip ${Math.min(30,withOdds.length)} tanesi gösteriliyor. Tümünü Maç Analizi sayfasında görebilirsin.</p>
+    <div class="table-scroll"><table>
+    <thead><tr><th>Maç</th><th>Pazar</th><th>Model</th><th>Oran</th><th>Edge</th><th>Yıldız</th></tr></thead><tbody>`;
+  withOdds.slice(0,30).forEach(l=>{
+    html += `<tr><td>${l.mac}</td><td>${l.pazar}</td><td>${(l.modelProb*100).toFixed(1)}%</td><td>${l.odds}</td>
+      <td class="${l.edge>=0?'edge-pos':'edge-neg'}">${(l.edge*100).toFixed(1)}%</td>
+      <td class="stars">${starString(l.stars)}</td></tr>`;
+  });
+  html += `</tbody></table></div></div>`;
+
+  html += `<div class="panel"><h2>Kupon Önerileri</h2>`;
+  if(coupons.length===0){
+    html += `<div class="no-play-banner">BUGÜN OYNAMA</div>
+      <p class="empty-note" style="margin-top:10px;">Bugün piyasada Ayarlar'daki eşiklere uyan bir kombinasyon bulunamadı.</p>`;
+  } else {
+    coupons.forEach((c,i)=>{
+      html += `<div class="coupon-card"><div class="head">
+        <h3>Kupon ${i+1} <span class="stars">${starString(c.stars)}</span></h3>
+        <span class="tag">${c.risk} Risk</span></div>`;
+      c.legs.forEach(l=> html += `<div class="leg-line">${l.mac} → <b>${l.pazar}</b> @ ${l.odds}</div>`);
+      html += `<div class="meta-row">
+        <span>Tahmini Başarı: ${(c.basariTahmini*100).toFixed(0)}%</span>
+        <span>Toplam Oran: ${c.totalOdds}</span>
+        <span>Ort. Edge: ${(c.avgEdge*100).toFixed(1)}%</span>
+      </div></div>`;
+    });
+  }
+  html += `</div>`;
+
+  html += `<div class="panel"><h2>🧠 AI Bugünün Yorumu</h2><div class="ai-comment">
+    ${generateDailyComment(legs, coupons, stats).map(p=>`<p>${p}</p>`).join('')}
+  </div></div>`;
+
+  html += `<div class="btn-row no-print" style="margin-top:18px;">
+    <button class="ghost" onclick="location.href='analysis.html'">Tüm Maçları Gör</button>
+    <button class="ghost" onclick="location.href='coupons.html'">Kuponları Gör</button>
+  </div>`;
+
+  el.innerHTML = html;
 }
 
 function updateHistoryCount(){
