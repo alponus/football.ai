@@ -1,0 +1,9 @@
+{
+  "teamHistory": [
+    {"takim":"Galatasaray","tarih":"2026-08-10","rakip":"Kasimpasa","saha":"Ev","attigi":3,"yedigi":1},
+    {"takim":"Galatasaray","tarih":"2026-08-17","rakip":"Alanyaspor","saha":"Deplasman","attigi":2,"yedigi":0},
+    {"takim":"Galatasaray","tarih":"2026-08-24","rakip":"Besiktas","saha":"Ev","attigi":1,"yedigi":1},
+    {"takim":"Fenerbahce","tarih":"2026-08-10","rakip":"Antalyaspor","saha":"Ev","attigi":2,"yedigi":0},
+    {"takim":"Fenerbahce","tarih":"2026-08-17","rakip":"Trabzonspor","saha":"Deplasman","attigi":1,"yedigi":1}
+  ]
+}

@@ -1,0 +1,14 @@
+/* Yazdır / PDF olarak kaydet modu icin */
+@media print{
+  .sidebar, .btn-row, .no-print{ display:none !important; }
+  .app-shell{ display:block !important; }
+  .main{ padding:0 !important; max-width:100% !important; }
+  body{ background:#fff !important; color:#111 !important; }
+  .panel, .coupon-card, .stat, .spotlight-card{
+    background:#fff !important; border:1px solid #ccc !important; color:#111 !important;
+    break-inside:avoid;
+  }
+  .num-gold, .edge-pos, .stars{ color:#111 !important; }
+  .edge-neg{ color:#900 !important; }
+  a[href]:after{ content:""; }
+}

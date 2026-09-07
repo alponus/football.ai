@@ -1,0 +1,13 @@
+{
+  "settings": {
+    "minEdge": 0.05,
+    "minGuvenScore": 45,
+    "minOdds": 1.30,
+    "maxOdds": 2.20,
+    "targetMin": 4.5,
+    "targetMax": 6.5,
+    "maxLegs": 4,
+    "kuponSayisi": 5,
+    "whatsappNumber": ""
+  }
+}
