@@ -41,7 +41,7 @@ if(!analysis){
   let html = '<div class="panel"><h2>Önerilen Kuponlar</h2>';
   analysis.coupons.forEach((c,i)=>{
     html += `<div class="coupon-card"><div class="head">
-      <h3>Kupon ${i+1} <span class="stars">${starString(c.stars)}</span></h3>
+      <h3>${c.tip} Kupon <span class="stars">${starString(c.stars)}</span></h3>
       <span class="tag">${c.risk} Risk</span>
     </div>`;
     c.legs.forEach(l=>{

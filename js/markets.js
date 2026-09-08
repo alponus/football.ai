@@ -134,3 +134,23 @@ function computeAllMarkets(lambdaHome, lambdaAway){
 
   return m;
 }
+
+/**
+ * "En guclu senaryo" / yorum basligi icin anlamli pazar alt kumesi.
+ * 0.5 Alt/Ust gibi zaten trivial (neredeyse kesin) pazarlar disarida
+ * birakilir ki "en guclu senaryo" bilgi degeri tasisin.
+ */
+const ANA_PAZAR_KEYS = [
+  'MS1','MSX','MS2','CS_1X','CS_X2','CS_12',
+  'OU_1.5_OVER','OU_1.5_UNDER','OU_2.5_OVER','OU_2.5_UNDER','OU_3.5_OVER','OU_3.5_UNDER',
+  'KGVAR','KGYOK','ODD','EVEN',
+  'GOL_ARALIK_0_1','GOL_ARALIK_2_3','GOL_ARALIK_4_5','GOL_ARALIK_6_PLUS',
+];
+
+function pickTopMarkets(allMarkets, n=2, keys=ANA_PAZAR_KEYS){
+  return keys
+    .filter(k=>allMarkets[k])
+    .map(k=>[k, allMarkets[k]])
+    .sort((a,b)=>b[1].prob-a[1].prob)
+    .slice(0,n);
+}

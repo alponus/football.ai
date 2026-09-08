@@ -42,3 +42,46 @@ function computeStatistics(){
     marketRates,
   };
 }
+
+/**
+ * Lig bazinda basari orani (madde 12: "en basarili/basarisiz lig").
+ * Eski (manuel girilmis, lig bilgisi olmayan) kayitlar "Bilinmiyor"
+ * altinda toplanir, hesaplama disi birakilmaz.
+ */
+function computeLeagueBreakdown(){
+  const results = getLoggedResults();
+  const byLeague = {};
+  results.forEach(r=>{
+    const lig = r.lig || 'Bilinmiyor';
+    if(!byLeague[lig]) byLeague[lig] = {correct:0, total:0};
+    byLeague[lig].total++;
+    if(r.sonuc==='dogru') byLeague[lig].correct++;
+  });
+  return Object.keys(byLeague).map(lig=>({
+    lig, correct: byLeague[lig].correct, total: byLeague[lig].total,
+    rate: byLeague[lig].correct/byLeague[lig].total,
+  })).sort((a,b)=>b.rate-a.rate);
+}
+
+/**
+ * Guven puani vs gercek basari karsilastirmasi (madde 12).
+ * guvenScore bilgisi olmayan (eski manuel) kayitlar bu hesaba dahil
+ * edilmez - yanlis kalibrasyon sonucu vermemek icin.
+ */
+function computeConfidenceCalibration(){
+  const results = getLoggedResults().filter(r=>typeof r.guvenScore === 'number');
+  const bands = [
+    {label:'0-50 (Düşük)', min:0, max:50},
+    {label:'50-70 (Orta)', min:50, max:70},
+    {label:'70-85 (İyi)', min:70, max:85},
+    {label:'85-100 (Yüksek)', min:85, max:101},
+  ];
+  return bands.map(b=>{
+    const grup = results.filter(r=>r.guvenScore>=b.min && r.guvenScore<b.max);
+    const correct = grup.filter(r=>r.sonuc==='dogru').length;
+    return {
+      band: b.label, total: grup.length, correct,
+      gercekOran: grup.length>0 ? correct/grup.length : null,
+    };
+  }).filter(b=>b.total>0);
+}

@@ -5,8 +5,11 @@
  * burada process.env.API_FOOTBALL_KEY'den okunur - kullaniciya, tarayiciya
  * veya kaynak koda ASLA gonderilmez.
  *
- * Kullanim (tarayicidan): GET /api/fixtures
- * Opsiyonel: GET /api/fixtures?date=2026-09-07 (test icin belirli bir tarih)
+ * Kullanim (tarayicidan):
+ *   GET /api/fixtures                     -> bugunun fikstürü (Europe/Istanbul)
+ *   GET /api/fixtures?date=2026-09-07     -> belirli bir tarih
+ *   GET /api/fixtures?ids=123-456-789     -> belirli mac ID'lerini yeniden sorgular
+ *                                             (en fazla 20 ID, sonuc kontrolu icin kullanilir)
  */
 
 function istanbulDateString(){
@@ -26,13 +29,15 @@ export default async function handler(req, res) {
     });
   }
 
+  const ids = req.query && req.query.ids;
   const date = (req.query && req.query.date) ? req.query.date : istanbulDateString();
 
+  const url = ids
+    ? `https://v3.football.api-sports.io/fixtures?ids=${encodeURIComponent(ids)}`
+    : `https://v3.football.api-sports.io/fixtures?date=${encodeURIComponent(date)}&timezone=Europe/Istanbul`;
+
   try {
-    const apiRes = await fetch(
-      `https://v3.football.api-sports.io/fixtures?date=${encodeURIComponent(date)}&timezone=Europe/Istanbul`,
-      { headers: { 'x-apisports-key': apiKey } }
-    );
+    const apiRes = await fetch(url, { headers: { 'x-apisports-key': apiKey } });
 
     const rateLimit = apiRes.headers.get('x-ratelimit-requests-remaining');
     const rateLimitTotal = apiRes.headers.get('x-ratelimit-requests-limit');
@@ -55,7 +60,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      tarih: date,
+      tarih: ids ? null : date,
       toplamMac: data.results,
       kalanIstek: rateLimit,
       toplamIstekHakki: rateLimitTotal,
@@ -69,3 +74,4 @@ export default async function handler(req, res) {
     });
   }
 }
+

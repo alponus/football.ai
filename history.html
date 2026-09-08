@@ -15,14 +15,23 @@
   <div class="main">
     <div class="page-header">
       <h1>İstatistik & Geçmiş</h1>
-      <div class="sub">Gerçek sonuçları kendin işaretledikçe bu sayfa dolar — sistem maç sonuçlarını otomatik öğrenemez.</div>
+      <div class="sub">Otomatik pazarlar için sonuçlar API'den otomatik doğrulanır; eski/manuel bacaklar için elle işaretleme de yapılabilir.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Otomatik Sonuç Kontrolü</h2>
+      <p class="hint">Kaydedilmiş raporlardaki maçları API'den tekrar sorgular, bitmiş olanların gerçek skorunu kendi tahminlerinle otomatik karşılaştırır. Elle bir şey işaretlemen gerekmez.</p>
+      <div class="btn-row">
+        <button class="primary" id="autoCheckBtn" onclick="runAutoCheck()">Sonuçları Otomatik Kontrol Et</button>
+        <span class="save-note" id="autoCheckStatus"></span>
+      </div>
     </div>
 
     <div id="statsZone"></div>
 
     <div class="panel">
-      <h2>Sonuç Gir</h2>
-      <p class="hint">Bir günü seç, o günkü bacakların gerçekte tutup tutmadığını işaretle, kaydet. Bu, İstatistik bölümündeki başarı/ROI hesaplamasını besler.</p>
+      <h2>Elle Sonuç Gir (yedek / eski manuel bacaklar için)</h2>
+      <p class="hint">fixtureId bilgisi olmayan (manuel analiz akışından gelen) bacaklar otomatik kontrol edilemez — onlar için burayı kullan.</p>
       <div class="field">
         <label>Rapor Tarihi</label>
         <select id="reportPicker" onchange="renderLegLogger()"></select>
@@ -40,6 +49,8 @@
 <script src="js/storage.js"></script>
 <script src="js/poisson.js"></script>
 <script src="js/edge.js"></script>
+<script src="js/outcomes.js"></script>
+<script src="js/resultChecker.js"></script>
 <script src="js/statistics.js"></script>
 <script src="js/app.js"></script>
 <script>
@@ -49,10 +60,10 @@ function renderStats(){
   const s = computeStatistics();
   const el = document.getElementById('statsZone');
   if(s.total===0){
-    el.innerHTML = `<div class="panel"><p class="empty-note">Henüz hiç sonuç girilmedi. Aşağıdan bir günün bacaklarını işaretleyerek başla.</p></div>`;
+    el.innerHTML = `<div class="panel"><p class="empty-note">Henüz hiç sonuç yok. "Sonuçları Otomatik Kontrol Et" butonuna bas — bitmiş maçlar varsa otomatik dolacak.</p></div>`;
     return;
   }
-  el.innerHTML = `<div class="stat-row">
+  let html = `<div class="stat-row">
     <div class="stat"><div class="lbl">Toplam Tahmin</div><div class="num num-gold">${s.total}</div></div>
     <div class="stat"><div class="lbl">Doğru</div><div class="num num-growth">${s.correct}</div></div>
     <div class="stat"><div class="lbl">Yanlış</div><div class="num num-risk">${s.wrong}</div></div>
@@ -64,6 +75,47 @@ function renderStats(){
     <div class="stat"><div class="lbl">En Kötü Market</div><div class="num num-risk" style="font-size:14px;">${s.worstMarket?`${s.worstMarket.market} (${(s.worstMarket.rate*100).toFixed(0)}%)`:'—'}</div></div>
     <div class="stat"><div class="lbl">Net Kâr (birim stake)</div><div class="num ${s.netProfit>=0?'num-growth':'num-risk'}">${s.netProfit>=0?'+':''}${s.netProfit.toFixed(2)}</div></div>
   </div>`;
+
+  const ligler = computeLeagueBreakdown();
+  if(ligler.length>0){
+    html += `<div class="panel"><h2>Lig Bazında Başarı</h2><div class="table-scroll"><table>
+      <thead><tr><th>Lig</th><th>Doğru/Toplam</th><th>Başarı</th></tr></thead><tbody>`;
+    ligler.forEach(l=>{
+      html += `<tr><td>${l.lig}</td><td>${l.correct}/${l.total}</td><td class="${l.rate>=0.5?'edge-pos':'edge-neg'}">${(l.rate*100).toFixed(0)}%</td></tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  const kalibrasyon = computeConfidenceCalibration();
+  if(kalibrasyon.length>0){
+    html += `<div class="panel"><h2>Güven Puanı vs Gerçek Başarı</h2>
+      <p class="hint">Modelin "güven" olarak işaretlediği bant ile o banttaki tahminlerin gerçekte tutma oranını karşılaştırır. İdeal durumda ikisi birbirine yakın olmalı.</p>
+      <div class="table-scroll"><table><thead><tr><th>Güven Bandı</th><th>Tahmin Sayısı</th><th>Gerçek Başarı Oranı</th></tr></thead><tbody>`;
+    kalibrasyon.forEach(k=>{
+      html += `<tr><td>${k.band}</td><td>${k.total}</td><td class="tag">${(k.gercekOran*100).toFixed(0)}%</td></tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+async function runAutoCheck(){
+  const btn = document.getElementById('autoCheckBtn');
+  const statusEl = document.getElementById('autoCheckStatus');
+  btn.disabled = true;
+  statusEl.textContent = 'Kontrol ediliyor...';
+  try{
+    const sonuc = await checkAllPendingResults((done,total)=>{
+      statusEl.textContent = `Kontrol ediliyor... ${done}/${total}`;
+    });
+    statusEl.textContent = sonuc.mesaj;
+    renderStats();
+    renderReportsList();
+  }catch(e){
+    statusEl.textContent = 'Hata: '+e.message;
+  }
+  btn.disabled = false;
 }
 
 function getReportDates(){
@@ -120,7 +172,7 @@ function saveLoggedResults(dateKey){
   report.legs.forEach((l,i)=>{
     const val = document.getElementById(`res_${i}`).value;
     if(val){
-      addLoggedResult({ tarih: dateKey, mac: l.mac, pazar: l.pazar, oran: l.odds, sonuc: val, stake: 1 });
+      addLoggedResult({ tarih: dateKey, mac: l.mac, pazar: l.pazar, oran: l.odds, sonuc: val, stake: 1, lig: l.lig || 'Bilinmiyor', guvenScore: l.guvenScore });
       count++;
     }
   });
@@ -163,7 +215,7 @@ function toggleReportDetail(dateKey){
     box.innerHTML = '<p class="empty-note">O gün kupon önerisi yok.</p>';
   } else {
     box.innerHTML = r.coupons.map((c,i)=>`
-      <div class="leg-line"><b>Kupon ${i+1}</b> (${starString(c.stars)}) — Toplam Oran: ${c.totalOdds}<br>
+      <div class="leg-line"><b>${c.tip||('Kupon '+(i+1))}</b> (${starString(c.stars)}) — Toplam Oran: ${c.totalOdds}<br>
       ${c.legs.map(l=>`${l.mac} → ${l.pazar} @ ${l.odds}`).join('<br>')}</div>
     `).join('');
   }
