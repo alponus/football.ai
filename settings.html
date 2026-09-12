@@ -22,6 +22,9 @@
         <input type="range" id="minEdge" min="-100" max="50" step="1"></div>
       <div class="field"><label>Minimum Güven Skoru (bilgi amaçlı, artık engel değil) <span id="v_minGuven"></span></label>
         <input type="range" id="minGuvenScore" min="0" max="100" step="5"></div>
+      <div class="field"><label>Piyasa Ağırlığı — kalibrasyon vs değer bulma dengesi <span id="v_marketBlend"></span></label>
+        <input type="range" id="marketBlendWeight" min="0" max="70" step="5"></div>
+      <p class="hint" style="margin-top:-8px;">0%: sadece kendi modelim (daha fazla "değer" bulur ama daha gürültülü). 70%: büyük ölçüde bahis oranına yaslanır (daha isabetli ama daha az "sürpriz" bulur). Önerilen: 20-40%.</p>
       <div class="field"><label>Minimum Oran (düşük oranlı "doldurma" bacakları eler) <span id="v_minOdds"></span></label>
         <input type="range" id="minOdds" min="1.01" max="10" step="0.1"></div>
       <div class="field"><label>Maksimum Oran (0 = sınırsız) <span id="v_maxOdds"></span></label>
@@ -76,6 +79,7 @@ function loadIntoForm(){
   const s = getSettings();
   document.getElementById('minEdge').value = s.minEdge*100;
   document.getElementById('minGuvenScore').value = s.minGuvenScore;
+  document.getElementById('marketBlendWeight').value = (s.marketBlendWeight ?? 0.30)*100;
   document.getElementById('minOdds').value = s.minOdds;
   document.getElementById('maxOdds').value = (s.maxOdds>=999) ? 0 : s.maxOdds;
   document.getElementById('targetMin').value = s.targetMin;
@@ -88,6 +92,7 @@ function loadIntoForm(){
 function updateLabels(){
   document.getElementById('v_minEdge').textContent = document.getElementById('minEdge').value + '%';
   document.getElementById('v_minGuven').textContent = document.getElementById('minGuvenScore').value;
+  document.getElementById('v_marketBlend').textContent = document.getElementById('marketBlendWeight').value + '%';
   document.getElementById('v_minOdds').textContent = document.getElementById('minOdds').value;
   const maxOddsVal = parseFloat(document.getElementById('maxOdds').value);
   document.getElementById('v_maxOdds').textContent = maxOddsVal===0 ? 'Sınırsız' : maxOddsVal;
@@ -96,7 +101,7 @@ function updateLabels(){
   document.getElementById('v_maxLegs').textContent = document.getElementById('maxLegs').value;
   document.getElementById('v_kuponSayisi').textContent = document.getElementById('kuponSayisi').value;
 }
-['minEdge','minGuvenScore','minOdds','maxOdds','targetMin','targetMax','maxLegs','kuponSayisi'].forEach(id=>{
+['minEdge','minGuvenScore','marketBlendWeight','minOdds','maxOdds','targetMin','targetMax','maxLegs','kuponSayisi'].forEach(id=>{
   document.getElementById(id).addEventListener('input', updateLabels);
 });
 
@@ -104,6 +109,7 @@ function saveAll(){
   const s = {
     minEdge: parseFloat(document.getElementById('minEdge').value)/100,
     minGuvenScore: parseFloat(document.getElementById('minGuvenScore').value),
+    marketBlendWeight: parseFloat(document.getElementById('marketBlendWeight').value)/100,
     minOdds: parseFloat(document.getElementById('minOdds').value),
     maxOdds: (parseFloat(document.getElementById('maxOdds').value)===0) ? 1000 : parseFloat(document.getElementById('maxOdds').value),
     targetMin: parseFloat(document.getElementById('targetMin').value),

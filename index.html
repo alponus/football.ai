@@ -255,15 +255,43 @@ async function runAutoAnalysis(){
     });
     const uniqueTeams = Array.from(teamKeySet.entries());
 
-    // 3) TAKIM ISTATISTIKLERI (cache + sinirli paralellik)
-    const statsCache = new Map();
+    // 3) TAKIM ISTATISTIKLERI (cache + sinirli paralellik) - HAM veriler
+    const rawStatsCache = new Map();
     await concurrencyMap(uniqueTeams, 8, async ([key, t])=>{
       const r = await fetch(`/api/team-stats?team=${t.team}&league=${t.league}&season=${t.season}`);
       const d = await r.json();
       usedRequests++;
-      statsCache.set(key, (d && d.stats) ? extractTeamGoalProfile(d.stats) : null);
+      rawStatsCache.set(key, (d && d.stats) ? extractTeamGoalProfile(d.stats) : null);
     }, (done,total)=>{
       setProgressLine(`Takım verileri hazırlanıyor... ${done}/${total}`);
+    });
+
+    // 3b) LIG BAZLI ONSEL DEGERLER (o gun o ligde oynayan takimlarin gercek ortalamasi)
+    setProgressLine('Lig ortalamaları hesaplanıyor...');
+    const rawProfilesObj = {}, keyToLeagueObj = {};
+    uniqueTeams.forEach(([key, t])=>{ rawProfilesObj[key]=rawStatsCache.get(key); keyToLeagueObj[key]=t.league; });
+    const leaguePriors = computeLeaguePriors(rawProfilesObj, keyToLeagueObj);
+
+    // 3c) GUNCEL FORM (her BENZERSIZ TAKIM icin son 8 mac - lig/sezon farketmez)
+    setProgressLine('Güncel form verileri alınıyor...');
+    const uniqueTeamIds = [...new Set(uniqueTeams.map(([,t])=>t.team))];
+    const recentFormCache = new Map();
+    await concurrencyMap(uniqueTeamIds, 8, async (teamId)=>{
+      const r = await fetch(`/api/team-fixtures?team=${teamId}&last=8`);
+      const d = await r.json();
+      usedRequests++;
+      recentFormCache.set(teamId, (d && d.maclar) ? extractRecentForm(d.maclar, teamId) : null);
+    }, (done,total)=>{
+      setProgressLine(`Güncel form verileri alınıyor... ${done}/${total}`);
+    });
+
+    // 3d) NIHAI (ayarlanmis) profiller: lig onseline kucultme + form ayarlamasi
+    const statsCache = new Map();
+    uniqueTeams.forEach(([key, t])=>{
+      const raw = rawStatsCache.get(key);
+      const prior = leaguePriors.get(t.league);
+      const form = recentFormCache.get(t.team);
+      statsCache.set(key, buildAdjustedProfile(raw, prior, form));
     });
 
     // 4) ORANLAR
@@ -278,8 +306,21 @@ async function runAutoAnalysis(){
       setProgressLine(`Oranlar alınıyor... ${done}/${total}`);
     });
 
+    // 4b) H2H (iki takimin gecmis karsilasmalari)
+    setProgressLine(`Geçmiş karşılaşmalar (H2H) alınıyor...`);
+    const h2hCache = new Map();
+    await concurrencyMap(maclar, 8, async (m)=>{
+      const r = await fetch(`/api/h2h?teams=${m.teams.home.id}-${m.teams.away.id}&last=10`);
+      const d = await r.json();
+      usedRequests++;
+      h2hCache.set(m.fixture.id, (d && d.h2h) ? extractH2HInfo(d.h2h) : null);
+    }, (done,total)=>{
+      setProgressLine(`Geçmiş karşılaşmalar (H2H) alınıyor... ${done}/${total}`);
+    });
+
     // 5) ANALIZ — artik TEK pazar degil, hesaplanabilen TUM Grup A pazarlari
     setProgressLine('Analiz ediliyor...');
+    const settings = getSettings();
     const projections = [];
     const legs = [];
     let cokPazarliMacSayisi = 0;
@@ -288,7 +329,8 @@ async function runAutoAnalysis(){
       const awayKey = `${m.teams.away.id}-${m.league.id}-${m.league.season}`;
       const hp = statsCache.get(homeKey);
       const ap = statsCache.get(awayKey);
-      const proj = projectFixtureFromApiStats(m.teams.home.name, m.teams.away.name, hp, ap);
+      const h2hInfo = h2hCache.get(m.fixture.id);
+      const proj = projectFixtureFromApiStats(m.teams.home.name, m.teams.away.name, hp, ap, h2hInfo);
       proj.lig = `${m.league.name} (${m.league.country})`;
       proj.fixtureId = m.fixture.id;
       projections.push(proj);
@@ -306,10 +348,17 @@ async function runAutoAnalysis(){
         const odds = oddsForMatch[key];
         if(odds===undefined) return; // bu pazarin oran verisi yok - uydurma yok, atla
         const market = allMarkets[key];
-        const leg = evaluateLeg(mac, market.label, market.prob, odds, proj);
+        // Piyasa harmanlamasi: modelin kendi olasiligini, oranin ima
+        // ettigi olasilikla (ayarlanabilir agirlikla) harmanlar.
+        // Agirlik 0 ise sadece model, 1 ise sadece piyasa kullanilir.
+        const impliedProb = 1/odds;
+        const w = settings.marketBlendWeight ?? 0.30;
+        const blendedProb = market.prob*(1-w) + impliedProb*w;
+        const leg = evaluateLeg(mac, market.label, blendedProb, odds, proj);
         leg.marketKey = key;
         leg.fixtureId = m.fixture.id;
         leg.lig = proj.lig;
+        leg.hamModelProb = market.prob; // harmanlamadan once, seffaflik icin saklanir
         legs.push(leg);
         macBacakSayisi++;
       });
@@ -322,7 +371,6 @@ async function runAutoAnalysis(){
 
     // 6) KUPON MOTORU
     setProgressLine('Kupon hazırlanıyor...');
-    const settings = getSettings();
     const playable = legs.filter(l=> !l.noData && l.odds>=settings.minOdds && l.odds<=settings.maxOdds);
     const value = playable.filter(l=> l.edge >= settings.minEdge && l.guvenScore >= settings.minGuvenScore);
     const kuponSonuclari = buildFourCoupons(legs, settings);

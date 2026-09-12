@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS = {
   maxLegs: 4,
   kuponSayisi: 5,
   whatsappNumber: '',
+  marketBlendWeight: 0.30, // Model olasiligi ile piyasanin ima ettigi olasiligin harmani (0=sadece model, 1=sadece piyasa)
 };
 
 function fai_get(key, fallback){
