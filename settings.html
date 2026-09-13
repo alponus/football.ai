@@ -22,9 +22,9 @@
         <input type="range" id="minEdge" min="-100" max="50" step="1"></div>
       <div class="field"><label>Minimum Güven Skoru (bilgi amaçlı, artık engel değil) <span id="v_minGuven"></span></label>
         <input type="range" id="minGuvenScore" min="0" max="100" step="5"></div>
-      <div class="field"><label>Piyasa Ağırlığı — kalibrasyon vs değer bulma dengesi <span id="v_marketBlend"></span></label>
+      <div class="field"><label>Piyasa Ağırlığı (temel) — kalibrasyon vs değer bulma dengesi <span id="v_marketBlend"></span></label>
         <input type="range" id="marketBlendWeight" min="0" max="70" step="5"></div>
-      <p class="hint" style="margin-top:-8px;">0%: sadece kendi modelim (daha fazla "değer" bulur ama daha gürültülü). 70%: büyük ölçüde bahis oranına yaslanır (daha isabetli ama daha az "sürpriz" bulur). Önerilen: 20-40%.</p>
+      <p class="hint" style="margin-top:-8px;">Bu, TEMEL ağırlıktır. Sistem, oran ne kadar tek taraflı (net favori/net mağlup) olursa piyasaya otomatik olarak daha da fazla kulak verir — böylece "küçük takım dev kulübe karşı favori" gibi absürt sonuçlar engellenir. 0%: sadece kendi modelim. 70%: büyük ölçüde bahis oranına yaslanır. Önerilen: 20-40%.</p>
       <div class="field"><label>Minimum Oran (düşük oranlı "doldurma" bacakları eler) <span id="v_minOdds"></span></label>
         <input type="range" id="minOdds" min="1.01" max="10" step="0.1"></div>
       <div class="field"><label>Maksimum Oran (0 = sınırsız) <span id="v_maxOdds"></span></label>

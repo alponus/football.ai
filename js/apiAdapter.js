@@ -178,7 +178,7 @@ function buildAdjustedProfile(rawProfile, leaguePrior, recentForm){
  * H2H ornek buyuklugune gore SINIRLI bir agirlikla bu yone ceker -
  * H2H hep kucuk bir ornektir, asla modelin tamamini ele gecirmez.
  */
-function projectFixtureFromApiStats(evTakim, depTakim, homeProfile, awayProfile, h2hInfo){
+function projectFixtureFromApiStats(evTakim, depTakim, homeProfile, awayProfile, h2hInfo, standingsInfo){
   const noHome = !homeProfile || (homeProfile.forHome===null && homeProfile.forAway===null);
   const noAway = !awayProfile || (awayProfile.forHome===null && awayProfile.forAway===null);
 
@@ -199,6 +199,15 @@ function projectFixtureFromApiStats(evTakim, depTakim, homeProfile, awayProfile,
 
   let lambdaHome = lambdaHomeParts.length ? lambdaHomeParts.reduce((a,b)=>a+b,0)/lambdaHomeParts.length : 1.3;
   let lambdaAway = lambdaAwayParts.length ? lambdaAwayParts.reduce((a,b)=>a+b,0)/lambdaAwayParts.length : 1.1;
+
+  // PUAN DURUMU AYARLAMASI: gol istatistiginden BAGIMSIZ, sonuc-bazli
+  // kalite sinyali. Bir takim gol ortalamalari acisindan vasat gorunse
+  // bile, lig puan durumunda acikca daha guclu ise, bu burada duzeltilir.
+  let standingsUygulandi = false;
+  if(standingsInfo){
+    const sonuc = applyStandingsAdjustment(lambdaHome, lambdaAway, standingsInfo.homeStrength, standingsInfo.awayStrength);
+    lambdaHome = sonuc.lambdaHome; lambdaAway = sonuc.lambdaAway; standingsUygulandi = sonuc.uygulandi;
+  }
 
   // H2H ayarlamasi: iki takimin GECMISTE birbirine karsi oynadigi maclarin
   // toplam gol ortalamasina hafifce yaslan. Agirlik, H2H ornek buyuklugune
@@ -231,6 +240,9 @@ function projectFixtureFromApiStats(evTakim, depTakim, homeProfile, awayProfile,
 
   if(h2hInfo && h2hInfo.sampleSize>=3){
     guven += ` + H2H (${h2hInfo.sampleSize} maç)`;
+  }
+  if(standingsUygulandi){
+    guven += ` + Puan Durumu`;
   }
 
   const score = mostLikelyScore(lambdaHome, lambdaAway);
@@ -322,5 +334,50 @@ function extractAllMarketOdds(oddsResponseArray){
 
 function setIfMissing(obj, key, val){
   if(val!==null && val!==undefined && !isNaN(val) && obj[key]===undefined) obj[key] = val;
+}
+
+/**
+ * Bir ligin puan durumundan, HER TAKIM icin lig ortalamasina gore
+ * bir "guc katsayisi" cikarir (1.0 = lig ortalamasi, >1 = ortalamanin
+ * ustunde, <1 = altinda). Bu, GOL istatistiklerinden BAGIMSIZ, tamamen
+ * SONUC (puan) bazli bir kalite sinyalidir - "Barcelona'nin kadro
+ * kalitesini gol ortalamasi yanlis yansitiyor olsa bile, puan durumu
+ * gercegi gosterir" mantigi.
+ */
+function computeTeamStrengthFromStandings(standingsArray){
+  const strengths = new Map();
+  if(!standingsArray || standingsArray.length===0) return strengths;
+
+  const gecerliTakimlar = standingsArray.filter(t=>t.all && t.all.played>0);
+  if(gecerliTakimlar.length<3) return strengths; // cok erken sezon, guvenilir degil
+
+  const ppgListesi = gecerliTakimlar.map(t=>t.points/t.all.played);
+  const ligOrtalamasi = ppgListesi.reduce((a,b)=>a+b,0)/ppgListesi.length;
+  if(ligOrtalamasi<=0) return strengths;
+
+  gecerliTakimlar.forEach(t=>{
+    const ppg = t.points/t.all.played;
+    strengths.set(t.team.id, ppg/ligOrtalamasi);
+  });
+  return strengths;
+}
+
+/**
+ * Lambda degerlerine, iki takimin PUAN BAZLI guc oranina gore ek bir
+ * duzeltme uygular. Karekok kullanilir ki asiri sert bir duzeltme
+ * olmasin (ornegin 3 kat puan farki, lambda'yi 3 kat degil ~1.7 kat
+ * degistirir) - yine de yon her zaman dogru tarafa (daha guclu takim
+ * lehine) calisir.
+ */
+function applyStandingsAdjustment(lambdaHome, lambdaAway, homeStrength, awayStrength){
+  if(homeStrength===undefined || awayStrength===undefined || homeStrength<=0 || awayStrength<=0){
+    return {lambdaHome, lambdaAway, uygulandi:false};
+  }
+  const oran = Math.sqrt(homeStrength/awayStrength);
+  return {
+    lambdaHome: lambdaHome*oran,
+    lambdaAway: lambdaAway/oran,
+    uygulandi: true,
+  };
 }
 
