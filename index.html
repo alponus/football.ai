@@ -311,6 +311,18 @@ async function runAutoAnalysis(){
       statsCache.set(key, buildAdjustedProfile(raw, prior, form));
     });
 
+    // 3e) OYUNCU ISTATISTIKLERI (her BENZERSIZ TAKIM+LIG+SEZON icin - kimin ne kadar katkisi var)
+    setProgressLine('Oyuncu istatistikleri alınıyor...');
+    const playerContribCache = new Map();
+    await concurrencyMap(uniqueTeams, 6, async ([key, t])=>{
+      const r = await fetch(`/api/players?team=${t.team}&league=${t.league}&season=${t.season}`);
+      const d = await r.json();
+      usedRequests++;
+      playerContribCache.set(key, (d && d.oyuncular) ? extractPlayerContributions(d.oyuncular) : new Map());
+    }, (done,total)=>{
+      setProgressLine(`Oyuncu istatistikleri alınıyor... ${done}/${total}`);
+    });
+
     // 4) ORANLAR
     setProgressLine(`Oranlar alınıyor...`);
     const oddsCache = new Map();
@@ -335,6 +347,18 @@ async function runAutoAnalysis(){
       setProgressLine(`Geçmiş karşılaşmalar (H2H) alınıyor... ${done}/${total}`);
     });
 
+    // 4c) SAKATLIK/CEZALI (mac basina - o gunku gercek kadro durumu)
+    setProgressLine('Sakatlık/cezalı bilgisi alınıyor...');
+    const injuryByFixture = new Map();
+    await concurrencyMap(maclar, 8, async (m)=>{
+      const r = await fetch(`/api/injuries?fixture=${m.fixture.id}`);
+      const d = await r.json();
+      usedRequests++;
+      injuryByFixture.set(m.fixture.id, (d && d.sakatlar) ? extractInjuredByTeam(d.sakatlar) : new Map());
+    }, (done,total)=>{
+      setProgressLine(`Sakatlık/cezalı bilgisi alınıyor... ${done}/${total}`);
+    });
+
     // 5) ANALIZ — artik TEK pazar degil, hesaplanabilen TUM Grup A pazarlari
     setProgressLine('Analiz ediliyor...');
     const settings = getSettings();
@@ -351,7 +375,18 @@ async function runAutoAnalysis(){
         homeStrength: teamStrengthCache.get(m.teams.home.id),
         awayStrength: teamStrengthCache.get(m.teams.away.id),
       };
-      const proj = projectFixtureFromApiStats(m.teams.home.name, m.teams.away.name, hp, ap, h2hInfo, standingsInfo);
+
+      const injuredByTeam = injuryByFixture.get(m.fixture.id) || new Map();
+      const homeContribs = playerContribCache.get(homeKey) || new Map();
+      const awayContribs = playerContribCache.get(awayKey) || new Map();
+      const homeTotalGoals = rawStatsCache.get(homeKey)?.totalGoalsFor || 0;
+      const awayTotalGoals = rawStatsCache.get(awayKey)?.totalGoalsFor || 0;
+      const injuryInfo = {
+        homeImpact: computeMissingImpact(injuredByTeam.get(m.teams.home.id), homeContribs, homeTotalGoals),
+        awayImpact: computeMissingImpact(injuredByTeam.get(m.teams.away.id), awayContribs, awayTotalGoals),
+      };
+
+      const proj = projectFixtureFromApiStats(m.teams.home.name, m.teams.away.name, hp, ap, h2hInfo, standingsInfo, injuryInfo);
       proj.lig = `${m.league.name} (${m.league.country})`;
       proj.fixtureId = m.fixture.id;
       projections.push(proj);
@@ -468,6 +503,7 @@ function renderAutoResults(legs, coupons, stats, projections, el){
         <td><button class="ghost" style="padding:4px 10px;font-size:11px;" onclick="toggleMacDetay(${i})">Detay</button></td></tr>
         <tr id="macDetay_${i}" style="display:none;"><td colspan="5">
           <div class="ai-comment" style="margin:6px 0 10px;">${p.yorum}</div>
+          ${p.eksikOyuncuNotu ? `<p style="font-size:12px;color:var(--risk);margin:0 0 10px;">⚠ Sakat/cezalı: ${p.eksikOyuncuNotu} — modele bu eksiklik yansıtıldı.</p>` : ''}
           <div style="font-size:12px;color:var(--muted);">
             ${pickTopMarketsNoConflict(p.markets, 3).map(([k,mk])=>`<div style="margin-bottom:4px;"><b style="color:var(--text)">${mk.label}</b> (%${(mk.prob*100).toFixed(0)}) — bu pazar modelin bu maç için değerlendirdiği en güçlü seçeneklerden biri.</div>`).join('')}
           </div>

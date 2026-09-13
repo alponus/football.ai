@@ -58,6 +58,7 @@ function extractTeamGoalProfile(statsResp){
     againstAway: toNum(g.against?.average?.away),
     playedHome: statsResp.fixtures?.played?.home ?? 0,
     playedAway: statsResp.fixtures?.played?.away ?? 0,
+    totalGoalsFor: g.for?.total?.total ?? 0,
     form: statsResp.form || '',
   };
 }
@@ -164,6 +165,7 @@ function buildAdjustedProfile(rawProfile, leaguePrior, recentForm){
     forHome, forAway, againstHome, againstAway,
     rawForHome: rawProfile.forHome, rawForAway: rawProfile.forAway,
     playedHome: rawProfile.playedHome, playedAway: rawProfile.playedAway,
+    totalGoalsFor: rawProfile.totalGoalsFor,
     form: rawProfile.form,
   };
 }
@@ -178,7 +180,7 @@ function buildAdjustedProfile(rawProfile, leaguePrior, recentForm){
  * H2H ornek buyuklugune gore SINIRLI bir agirlikla bu yone ceker -
  * H2H hep kucuk bir ornektir, asla modelin tamamini ele gecirmez.
  */
-function projectFixtureFromApiStats(evTakim, depTakim, homeProfile, awayProfile, h2hInfo, standingsInfo){
+function projectFixtureFromApiStats(evTakim, depTakim, homeProfile, awayProfile, h2hInfo, standingsInfo, injuryInfo){
   const noHome = !homeProfile || (homeProfile.forHome===null && homeProfile.forAway===null);
   const noAway = !awayProfile || (awayProfile.forHome===null && awayProfile.forAway===null);
 
@@ -207,6 +209,25 @@ function projectFixtureFromApiStats(evTakim, depTakim, homeProfile, awayProfile,
   if(standingsInfo){
     const sonuc = applyStandingsAdjustment(lambdaHome, lambdaAway, standingsInfo.homeStrength, standingsInfo.awayStrength);
     lambdaHome = sonuc.lambdaHome; lambdaAway = sonuc.lambdaAway; standingsUygulandi = sonuc.uygulandi;
+  }
+
+  // SAKATLIK/CEZALI OYUNCU AYARLAMASI: sadece HUCUM (attigi gol
+  // beklentisi) etkilenir - hangi oyuncunun eksik oldugu ve o
+  // oyuncunun gercek gol+asist katkisi baz alinir, sadece "kac kisi
+  // sakat" degil. Savunma oyuncularinin eksikligi (defans katkisi
+  // verimizde yok) bu modelde YAKALANMAZ - bilinen bir sinirdir.
+  let eksikOyuncuNotu = null;
+  if(injuryInfo){
+    if(injuryInfo.homeImpact && injuryInfo.homeImpact.etkiOrani>0){
+      lambdaHome = applyInjuryImpact(lambdaHome, injuryInfo.homeImpact.etkiOrani);
+    }
+    if(injuryInfo.awayImpact && injuryInfo.awayImpact.etkiOrani>0){
+      lambdaAway = applyInjuryImpact(lambdaAway, injuryInfo.awayImpact.etkiOrani);
+    }
+    const hepsi = [...(injuryInfo.homeImpact?.eksikOyuncular||[]), ...(injuryInfo.awayImpact?.eksikOyuncular||[])];
+    if(hepsi.length>0){
+      eksikOyuncuNotu = hepsi.map(o=>`${o.isim} (${o.gol}G ${o.asist}A)`).join(', ');
+    }
   }
 
   // H2H ayarlamasi: iki takimin GECMISTE birbirine karsi oynadigi maclarin
@@ -255,6 +276,7 @@ function projectFixtureFromApiStats(evTakim, depTakim, homeProfile, awayProfile,
     tahminiSkor: `${score.h}-${score.a}`,
     evForm: homeProfile.form, depForm: awayProfile.form,
     evGolOrt: homeProfile.rawForHome, depGolOrt: awayProfile.rawForAway,
+    eksikOyuncuNotu,
   };
 }
 
@@ -334,6 +356,79 @@ function extractAllMarketOdds(oddsResponseArray){
 
 function setIfMissing(obj, key, val){
   if(val!==null && val!==undefined && !isNaN(val) && obj[key]===undefined) obj[key] = val;
+}
+
+/**
+ * /api/players cevabindan, oyuncu ID -> {isim, gol, asist} haritasi
+ * cikarir. Birden fazla musabaka/lig gorunumu varsa (statistics
+ * dizisi), hepsini toplar.
+ */
+function extractPlayerContributions(oyuncularResp){
+  const map = new Map();
+  if(!oyuncularResp) return map;
+  oyuncularResp.forEach(o=>{
+    if(!o.player || !o.statistics) return;
+    let gol=0, asist=0;
+    o.statistics.forEach(s=>{
+      gol += s.goals?.total || 0;
+      asist += s.goals?.assists || 0;
+    });
+    map.set(o.player.id, { isim: o.player.name, gol, asist });
+  });
+  return map;
+}
+
+/**
+ * /api/injuries cevabindan (bir fixture icin), HANGI TAKIMIN hangi
+ * oyuncularinin sahada olmadigini cikarir. teamId -> [playerId,...]
+ */
+function extractInjuredByTeam(sakatlarResp){
+  const map = new Map();
+  if(!sakatlarResp) return map;
+  sakatlarResp.forEach(s=>{
+    if(!s.player || !s.team) return;
+    const list = map.get(s.team.id) || [];
+    list.push(s.player.id);
+    map.set(s.team.id, list);
+  });
+  return map;
+}
+
+/**
+ * Bir takimin sakat/cezali oyuncularinin, o takimin TOPLAM gol+asist
+ * katkisinin ne kadarini temsil ettigini hesaplar (0-1 arasi). Bu,
+ * "kilit oyuncu eksik mi yoksa onemsiz biri mi" ayrimini yapar -
+ * sadece sakat SAYISINA degil, KATKISINA bakar.
+ *
+ * Donen "etkiOrani", lambda'ya dogrudan uygulanmadan once bir
+ * SONUMLEME (dampening) katsayisiyla carpilir - cunku takimlar
+ * yildizlari yoklugunda bile tamamen cokmez, kismen adapte olur.
+ */
+function computeMissingImpact(injuredPlayerIds, playerContribMap, teamTotalGoals){
+  if(!injuredPlayerIds || injuredPlayerIds.length===0 || !teamTotalGoals || teamTotalGoals<=0){
+    return { etkiOrani: 0, eksikOyuncular: [] };
+  }
+  let kayipKatki = 0;
+  const eksikOyuncular = [];
+  injuredPlayerIds.forEach(pid=>{
+    const c = playerContribMap.get(pid);
+    if(!c) return; // oyuncu bulunamadi (ör. cok az oynamis, listede yok) - katki bilinmiyor, atlanir
+    const katki = c.gol + c.asist*0.5;
+    kayipKatki += katki;
+    if(katki>0) eksikOyuncular.push({ isim: c.isim, gol: c.gol, asist: c.asist });
+  });
+  const etkiOraniHam = kayipKatki / teamTotalGoals;
+  return { etkiOrani: Math.min(0.6, etkiOraniHam), eksikOyuncular }; // %60 ustu asiri sert olur, sinirlandirilir
+}
+
+/**
+ * Eksik oyuncu etkisini lambda'ya uygular. DAMPENING_FACTOR=0.6:
+ * takim, kilit oyuncusunun katkisinin tamamini degil, kabaca %60'ini
+ * kaybeder gibi davranilir (digerleri kismen telafi eder varsayimi).
+ */
+function applyInjuryImpact(lambdaFor, etkiOrani){
+  const DAMPENING = 0.6;
+  return lambdaFor * (1 - etkiOrani*DAMPENING);
 }
 
 /**
