@@ -435,11 +435,17 @@ function applyInjuryImpact(lambdaFor, etkiOrani){
  * Bir ligin puan durumundan, HER TAKIM icin lig ortalamasina gore
  * bir "guc katsayisi" cikarir (1.0 = lig ortalamasi, >1 = ortalamanin
  * ustunde, <1 = altinda). Bu, GOL istatistiklerinden BAGIMSIZ, tamamen
- * SONUC (puan) bazli bir kalite sinyalidir - "Barcelona'nin kadro
- * kalitesini gol ortalamasi yanlis yansitiyor olsa bile, puan durumu
- * gercegi gosterir" mantigi.
+ * SONUC (puan) bazli bir kalite sinyalidir.
+ *
+ * Az mac oynanmisken (sezon basi), guc katsayisi 1.0'a (notr) DEGIL,
+ * varsa fallbackStrengths'teki (GECEN SEZONUN guc katsayisi) degere
+ * dogru kucultulur - "PSG'nin bu sezon sadece 1 maci var ama gecen
+ * sezon acikca guclu bir takimdi" bilgisini kaybetmemek icin.
+ * fallbackStrengths yoksa (ör. yeni terfi eden takim) 1.0 kullanilir.
  */
-function computeTeamStrengthFromStandings(standingsArray){
+const STANDINGS_SHRINKAGE_K = 5; // ~5 mac sonrasi guncel sezona tam guvenilir
+
+function computeTeamStrengthFromStandings(standingsArray, fallbackStrengths){
   const strengths = new Map();
   if(!standingsArray || standingsArray.length===0) return strengths;
 
@@ -452,7 +458,11 @@ function computeTeamStrengthFromStandings(standingsArray){
 
   gecerliTakimlar.forEach(t=>{
     const ppg = t.points/t.all.played;
-    strengths.set(t.team.id, ppg/ligOrtalamasi);
+    const hamGuc = ppg/ligOrtalamasi;
+    const n = t.all.played;
+    const yedekDeger = (fallbackStrengths && fallbackStrengths.get(t.team.id)) ?? 1.0;
+    const kucultulmusGuc = yedekDeger + (hamGuc-yedekDeger) * (n/(n+STANDINGS_SHRINKAGE_K));
+    strengths.set(t.team.id, kucultulmusGuc);
   });
   return strengths;
 }

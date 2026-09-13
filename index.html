@@ -45,8 +45,8 @@
       </div>
       <p class="hint" style="margin-top:-8px;">Not: Küçük liglerde API'nin oran (odds) verisi neredeyse hiç yok — "tüm ligler" denemesinde 202 maçtan sadece 1 tanesinde oran bulundu. Anlamlı sonuç almak için lig kutusunu işaretli bırakman önerilir. Bitmiş maçlar her zaman otomatik hariç tutulur.</p>
       <div class="btn-row">
-        <button class="primary" id="autoAnalyzeBtn" onclick="runAutoAnalysis()">BUGÜNÜ ANALİZ ET</button>
-        <button class="ghost" onclick="showLeagueCodes()">Bugün Görülen Tüm Lig Kodlarını Göster</button>
+        <button class="btn-c1" id="autoAnalyzeBtn" onclick="runAutoAnalysis()">BUGÜNÜ ANALİZ ET</button>
+        <button class="btn-c3" onclick="showLeagueCodes()">Bugün Görülen Tüm Lig Kodlarını Göster</button>
         <span class="save-note" id="apiStatus"></span>
       </div>
       <div id="leagueCodesZone" style="margin-top:10px;"></div>
@@ -77,13 +77,13 @@ Besiktas - Trabzonspor | 1.5U:1.42 KG:1.90"></textarea>
       <textarea id="historyInput" placeholder="Galatasaray | Ev | Kasimpasa | 3-1 | 2026-08-10
 Galatasaray | Deplasman | Alanyaspor | 2-0 | 2026-08-17"></textarea>
       <div class="btn-row" style="margin-top:10px;">
-        <button class="ghost" onclick="loadSavedHistoryIntoBox()">Kayıtlı geçmişi kutuya yükle</button>
+        <button class="btn-c5" onclick="loadSavedHistoryIntoBox()">Kayıtlı geçmişi kutuya yükle</button>
         <span class="save-note" id="historyCount"></span>
       </div>
     </div>
 
     <div class="btn-row no-print" style="margin:20px 0;">
-      <button class="primary" id="analyzeBtn" onclick="startAnalysis()">Analiz Et</button>
+      <button class="btn-c2" id="analyzeBtn" onclick="startAnalysis()">Analiz Et</button>
     </div>
 
     <div id="progressZone"></div>
@@ -275,6 +275,23 @@ async function runAutoAnalysis(){
     // 3b2) PUAN DURUMU (lig basina 1 istek - gol istatistiginden bagimsiz kalite sinyali)
     setProgressLine('Puan durumu alınıyor...');
     const uniqueLeagueSeasonPairs = [...new Set(maclar.map(m=>`${m.league.id}|${m.league.season}`))];
+
+    // Once GECEN SEZONUN puan durumu (sezon basi icin yedek/oncul deger)
+    const prevSeasonStrengthCache = new Map();
+    await concurrencyMap(uniqueLeagueSeasonPairs, 6, async (pairKey)=>{
+      const [leagueId, season] = pairKey.split('|');
+      const r = await fetch(`/api/standings?league=${leagueId}&season=${parseInt(season)-1}`);
+      const d = await r.json();
+      usedRequests++;
+      if(d && d.standings){
+        const strengths = computeTeamStrengthFromStandings(d.standings); // yedeksiz - kendi basina hesaplanir
+        strengths.forEach((v,teamId)=>prevSeasonStrengthCache.set(teamId, v));
+      }
+    }, (done,total)=>{
+      setProgressLine(`Geçen sezon puan durumu alınıyor... ${done}/${total}`);
+    });
+
+    // Simdi BU SEZONUN puan durumu - az veri varsa GECEN SEZONA dogru kucultulur
     const teamStrengthCache = new Map(); // teamId -> guc katsayisi
     await concurrencyMap(uniqueLeagueSeasonPairs, 6, async (pairKey)=>{
       const [leagueId, season] = pairKey.split('|');
@@ -282,7 +299,7 @@ async function runAutoAnalysis(){
       const d = await r.json();
       usedRequests++;
       if(d && d.standings){
-        const strengths = computeTeamStrengthFromStandings(d.standings);
+        const strengths = computeTeamStrengthFromStandings(d.standings, prevSeasonStrengthCache);
         strengths.forEach((v,teamId)=>teamStrengthCache.set(teamId, v));
       }
     }, (done,total)=>{
@@ -464,6 +481,15 @@ async function runAutoAnalysis(){
   btn.disabled = false;
 }
 
+function gercekciBasariOrani(coupon){
+  // Naif carpim (bacaklarin BAGIMSIZ oldugu varsayimi) gercekte HEP
+  // iyimser cikar - gercek hayatta bacaklar arasinda az da olsa
+  // korelasyon olur. Muhafazakar bir "gercekci" sunum icin %85 ile
+  // carpiyoruz - kesin bir olcum degil, ama naif rakamdan daha durust.
+  const KORELASYON_INDIRIMI = 0.85;
+  return Math.max(0, coupon.basariTahmini * KORELASYON_INDIRIMI);
+}
+
 function toggleMacDetay(i){
   const row = document.getElementById(`macDetay_${i}`);
   row.style.display = row.style.display==='none' ? 'table-row' : 'none';
@@ -496,10 +522,10 @@ function renderAutoResults(legs, coupons, stats, projections, el){
   const macOzet = projections.filter(p=>!p.noData).sort((a,b)=>b.guvenScore-a.guvenScore).slice(0,20);
   if(macOzet.length>0){
     html += `<div class="panel"><h2>Maç Bazlı En Güçlü Senaryo</h2>
-      <p class="hint">Her maç için, hesaplanan ana pazarlar arasından modelin en olası gördüğü senaryo. "Detay" ile AI yorumunu ve en güçlü 3 pazarın gerekçesini görebilirsin.</p>
+      <p class="hint">Her maç için, hesaplanan ana pazarlar arasından modelin en olası gördüğü senaryo (piyasa oranıyla harmanlanmamış, HAM model görüşü — "Tüm Bacaklar" tablosundaki yüzdeler bunun oranla harmanlanmış hali olduğu için farklı görünebilir). "Detay" ile AI yorumunu ve en güçlü 3 pazarın gerekçesini görebilirsin.</p>
       <div class="table-scroll"><table><thead><tr><th>Lig</th><th>Maç</th><th>En Güçlü Senaryo</th><th>Güven</th><th></th></tr></thead><tbody>`;
     macOzet.forEach((p,i)=>{
-      html += `<tr><td>${p.lig}</td><td>${p.evTakim} - ${p.depTakim}</td><td>${p.enGucluSenaryo}</td><td class="tag">${p.guven}</td>
+      html += `<tr><td>${p.lig}</td><td>${p.evTakim} - ${p.depTakim}</td><td>${p.enGucluSenaryo}</td><td class="tag" style="color:var(--${getVerdict(p.guvenScore).renk})">${getVerdict(p.guvenScore).etiket}</td>
         <td><button class="ghost" style="padding:4px 10px;font-size:11px;" onclick="toggleMacDetay(${i})">Detay</button></td></tr>
         <tr id="macDetay_${i}" style="display:none;"><td colspan="5">
           <div class="ai-comment" style="margin:6px 0 10px;">${p.yorum}</div>
@@ -514,12 +540,15 @@ function renderAutoResults(legs, coupons, stats, projections, el){
 
   const withOdds = [...legs].sort((a,b)=>b.edge-a.edge);
   html += `<div class="panel"><h2>En Güçlü ${Math.min(30,withOdds.length)} Bacak</h2>
-    <p class="hint">Toplam ${legs.length} bacak hesaplandı, oran karşılaştırması yapılabilenler arasından en yüksek edge'e sahip ${Math.min(30,withOdds.length)} tanesi gösteriliyor. Tümünü Maç Analizi sayfasında görebilirsin.</p>
+    <p class="hint">Toplam ${legs.length} bacak hesaplandı, oran karşılaştırması yapılabilenler arasından en yüksek avantaja sahip ${Math.min(30,withOdds.length)} tanesi gösteriliyor. Tümünü Maç Analizi sayfasında görebilirsin.</p>
     <div class="table-scroll"><table>
-    <thead><tr><th>Maç</th><th>Pazar</th><th>Model</th><th>Oran</th><th>Edge</th><th>Yıldız</th></tr></thead><tbody>`;
+    <thead><tr><th>Maç</th><th>Pazar</th><th>Kazanma İhtimali</th><th>Oran</th><th>Avantaj</th><th>Değerlendirme</th><th>Risk %</th><th>Yıldız</th></tr></thead><tbody>`;
   withOdds.slice(0,30).forEach(l=>{
+    const v = getVerdict(l.guvenScore, l.edge);
     html += `<tr><td>${l.mac}</td><td>${l.pazar}</td><td>${(l.modelProb*100).toFixed(1)}%</td><td>${l.odds}</td>
       <td class="${l.edge>=0?'edge-pos':'edge-neg'}">${(l.edge*100).toFixed(1)}%</td>
+      <td class="tag" style="color:var(--${v.renk})">${v.etiket}</td>
+      <td>${riskYuzdesi(l)}%</td>
       <td class="stars">${starString(l.stars)}</td></tr>`;
   });
   html += `</tbody></table></div></div>`;
@@ -537,7 +566,7 @@ function renderAutoResults(legs, coupons, stats, projections, el){
         <span class="tag">${c.risk} Risk</span></div>`;
       c.legs.forEach(l=> html += `<div class="leg-line">${l.mac} → <b>${l.pazar}</b> @ ${l.odds}</div>`);
       html += `<div class="meta-row">
-        <span>Tahmini Başarı: ${(c.basariTahmini*100).toFixed(0)}%</span>
+        <span>Gerçekçi Tutma İhtimali: ${(gercekciBasariOrani(c)*100).toFixed(0)}%</span>
         <span>Toplam Oran: ${c.totalOdds}</span>
         <span>Ort. Edge: ${(c.avgEdge*100).toFixed(1)}%</span>
       </div>
@@ -554,8 +583,8 @@ function renderAutoResults(legs, coupons, stats, projections, el){
   </div></div>`;
 
   html += `<div class="btn-row no-print" style="margin-top:18px;">
-    <button class="ghost" onclick="location.href='analysis.html'">Tüm Maçları Gör</button>
-    <button class="ghost" onclick="location.href='coupons.html'">Kuponları Gör</button>
+    <button class="btn-c4" onclick="location.href='analysis.html'">Tüm Maçları Gör</button>
+    <button class="btn-c6" onclick="location.href='coupons.html'">Kuponları Gör</button>
   </div>`;
 
   el.innerHTML = html;
@@ -668,26 +697,29 @@ function renderResults(legs, coupons, stats, projections, fixtureErrors, history
   }
 
   html += `<div class="panel"><h2>Maç Analizi</h2><div class="table-scroll"><table>
-    <thead><tr><th>Maç</th><th>Form (Ev/Dep)</th><th>Poisson (λ)</th><th>Tahmini Skor</th><th>Güven</th></tr></thead><tbody>`;
+    <thead><tr><th>Maç</th><th>Form (Ev/Dep)</th><th>Poisson (λ)</th><th>Tahmini Skor</th><th>Değerlendirme</th></tr></thead><tbody>`;
   projections.forEach(p=>{
+    const v = getVerdict(p.guvenScore);
     html += `<tr>
       <td>${p.evTakim} - ${p.depTakim}</td>
       <td>${formStr(p.evForm)} / ${formStr(p.depForm)}</td>
       <td>${p.lambdaTotal}</td>
       <td>${p.tahminiSkor}</td>
-      <td class="tag">${p.guven}</td>
+      <td class="tag" style="color:var(--${v.renk})">${v.etiket}</td>
     </tr>`;
   });
   html += `</tbody></table></div></div>`;
 
   html += `<div class="panel"><h2>Tüm Bacaklar</h2><div class="table-scroll"><table>
-    <thead><tr><th>Maç</th><th>Pazar</th><th>Model</th><th>Oran</th><th>Edge</th><th>EV</th><th>Risk</th><th>Yıldız</th></tr></thead><tbody>`;
+    <thead><tr><th>Maç</th><th>Pazar</th><th>Kazanma İhtimali</th><th>Oran</th><th>Avantaj</th><th>EV</th><th>Değerlendirme</th><th>Risk %</th><th>Yıldız</th></tr></thead><tbody>`;
   [...legs].sort((a,b)=>b.edge-a.edge).forEach(l=>{
+    const v = getVerdict(l.guvenScore, l.edge);
     html += `<tr>
       <td>${l.mac}</td><td>${l.pazar}</td><td>${(l.modelProb*100).toFixed(1)}%</td><td>${l.odds}</td>
       <td class="${l.edge>=0?'edge-pos':'edge-neg'}">${(l.edge*100).toFixed(1)}%</td>
       <td class="${l.ev>=0?'edge-pos':'edge-neg'}">${l.ev>=0?'+':''}${(l.ev*100).toFixed(1)}%</td>
-      <td>${l.risk}</td><td class="stars">${starString(l.stars)}</td>
+      <td class="tag" style="color:var(--${v.renk})">${v.etiket}</td>
+      <td>${riskYuzdesi(l)}%</td><td class="stars">${starString(l.stars)}</td>
     </tr>`;
   });
   html += `</tbody></table></div></div>`;
@@ -706,7 +738,7 @@ function renderResults(legs, coupons, stats, projections, fixtureErrors, history
         html += `<div class="leg-line">${l.mac} → <b>${l.pazar}</b> @ ${l.odds}</div>`;
       });
       html += `<div class="meta-row">
-        <span>Tahmini Başarı: ${(c.basariTahmini*100).toFixed(0)}%</span>
+        <span>Gerçekçi Tutma İhtimali: ${(gercekciBasariOrani(c)*100).toFixed(0)}%</span>
         <span>Toplam Oran: ${c.totalOdds}</span>
         <span>Ort. Edge: ${(c.avgEdge*100).toFixed(1)}%</span>
       </div></div>`;
@@ -721,9 +753,9 @@ function renderResults(legs, coupons, stats, projections, fixtureErrors, history
   html += renderParseErrors(fixtureErrors, historyErrors);
 
   html += `<div class="btn-row no-print" style="margin-top:18px;">
-    <button class="ghost" onclick="exportTxt()">TXT indir</button>
-    <button class="ghost" onclick="printReport()">PDF oluştur (Yazdır)</button>
-    <button class="ghost" onclick="exportWhatsApp()">WhatsApp'a gönder</button>
+    <button class="btn-c2" onclick="exportTxt()">TXT indir</button>
+    <button class="btn-c3" onclick="printReport()">PDF oluştur (Yazdır)</button>
+    <button class="btn-c5" onclick="exportWhatsApp()">WhatsApp'a gönder</button>
   </div>`;
 
   el.innerHTML = html;
@@ -741,14 +773,16 @@ function formStr(form){
 function renderSpotlight(leg, projections){
   const proj = projections.find(p=>`${p.evTakim} - ${p.depTakim}`===leg.mac);
   const team = leg.pazar==='1.5 Üst' || leg.pazar==='KG Var' ? leg.mac.split(' - ')[0] : leg.mac;
+  const gercek = getRealisticWinProbability(leg.guvenScore);
+  const verdict = getVerdict(leg.guvenScore, leg.edge);
   return `<div class="spotlight-card" style="margin-bottom:18px;">
-    <div class="tag">★ En Güvenli Maç</div>
+    <div class="tag">★ En Güvenli Maç — <span style="color:var(--${verdict.renk})">${verdict.etiket}</span></div>
     <div class="team">${leg.mac}</div>
     <div class="stars">${starString(leg.stars)}</div>
     <div class="spotlight-grid">
       <div class="cell"><div class="k">Pazar</div><div class="v">${leg.pazar}</div></div>
-      <div class="cell"><div class="k">Edge</div><div class="v edge-pos">+${(leg.edge*100).toFixed(0)}%</div></div>
-      <div class="cell"><div class="k">Tahmini Olasılık</div><div class="v">${(leg.modelProb*100).toFixed(0)}%</div></div>
+      <div class="cell"><div class="k">Kazanma İhtimali</div><div class="v edge-pos">${(leg.modelProb*100).toFixed(0)}%</div></div>
+      <div class="cell"><div class="k">${gercek?`Geçmişte Bu Bantta Gerçek Tutma`:'Bahis Oranının İma Ettiği'}</div><div class="v">${gercek?`${(gercek.oran*100).toFixed(0)}% (${gercek.ornekSayisi} örnek)`:`${(leg.implied*100).toFixed(0)}%`}</div></div>
       <div class="cell"><div class="k">Güven</div><div class="v">${leg.guvenScore}</div></div>
       ${proj?`<div class="cell"><div class="k">İç Saha Gol Ort.</div><div class="v">${proj.evGolOrt!==null?proj.evGolOrt.toFixed(2):'—'}</div></div>
       <div class="cell"><div class="k">Deplasman Gol Ort.</div><div class="v">${proj.depGolOrt!==null?proj.depGolOrt.toFixed(2):'—'}</div></div>

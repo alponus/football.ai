@@ -85,6 +85,20 @@ button.ghost{background:var(--panel-2);border:1px solid var(--line);color:var(--
 button.ghost:hover{border-color:var(--growth);}
 .btn-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
 
+/* Acik renkli, birbirinden farkli buton paleti - gorsel ayrisim icin */
+button.btn-c1{background:#7FD4C1;color:#0B2E27;border:none;} /* acik nane yesili */
+button.btn-c2{background:#F4C77B;color:#3A2405;border:none;} /* acik amber */
+button.btn-c3{background:#9FC1F5;color:#0C2A4D;border:none;} /* acik gokyuzu mavisi */
+button.btn-c4{background:#E7A7C7;color:#3D0F24;border:none;} /* acik pembe */
+button.btn-c5{background:#C3D97E;color:#28320A;border:none;} /* acik misir sarisi-yesil */
+button.btn-c6{background:#B8A8E8;color:#22103F;border:none;} /* acik lavanta */
+button.btn-c1, button.btn-c2, button.btn-c3, button.btn-c4, button.btn-c5, button.btn-c6{
+  padding:10px 18px;border-radius:5px;font-weight:600;font-size:13.5px;cursor:pointer;font-family:'Inter',sans-serif;
+}
+button.btn-c1:hover, button.btn-c2:hover, button.btn-c3:hover, button.btn-c4:hover, button.btn-c5:hover, button.btn-c6:hover{
+  filter:brightness(1.06); transform:translateY(-1px);
+}
+
 /* ---------- Tables ---------- */
 .table-scroll{overflow-x:auto;}
 table{width:100%;border-collapse:collapse;font-size:12.5px;}

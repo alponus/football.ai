@@ -24,12 +24,20 @@
 <script src="js/storage.js"></script>
 <script src="js/poisson.js"></script>
 <script src="js/edge.js"></script>
+<script src="js/scoring.js"></script>
+<script src="js/insights.js"></script>
 <script src="js/coupons.js"></script>
 <script src="js/app.js"></script>
 <script>
 initShell('coupons');
 const analysis = getLastAnalysis();
 document.getElementById('dateLabel').textContent = analysis ? `Son analiz: ${analysis.date}` : 'Henüz analiz yapılmadı';
+
+function gercekciBasariOrani(coupon){
+  // Naif carpim iyimser cikar - bacaklar arasi kucuk korelasyonlari
+  // hesaba katan muhafazakar bir gorunum icin %85 ile carpiyoruz.
+  return Math.max(0, coupon.basariTahmini * 0.85);
+}
 
 const el = document.getElementById('content');
 if(!analysis){
@@ -38,19 +46,26 @@ if(!analysis){
   el.innerHTML = `<div class="panel"><div class="no-play-banner">BUGÜN OYNAMA</div>
     <p class="empty-note" style="margin-top:10px;">Son analizde hedef oran aralığına ulaşan, pozitif edge taşıyan bir kombinasyon bulunamadı.</p></div>`;
 } else {
-  let html = '<div class="panel"><h2>Önerilen Kuponlar</h2>';
+  let html = '<div class="panel"><h2>Önerilen Kuponlar</h2><p class="hint">Her kuponun altında, o kuponun neden bu şekilde kurulduğunu ve gerçekçi tutma ihtimalini görebilirsin — Dashboard\'daki maç yorumlarıyla aynı mantığı kullanır.</p>';
   analysis.coupons.forEach((c,i)=>{
+    const ortalamaGuven = c.legs.reduce((s,l)=>s+l.guvenScore,0)/c.legs.length;
+    const verdict = getVerdict(ortalamaGuven, c.avgEdge);
+    const gercekci = gercekciBasariOrani(c);
     html += `<div class="coupon-card"><div class="head">
       <h3>${c.tip} Kupon <span class="stars">${starString(c.stars)}</span></h3>
-      <span class="tag">${c.risk} Risk</span>
+      <span class="tag" style="color:var(--${verdict.renk})">${verdict.etiket}</span>
     </div>`;
     c.legs.forEach(l=>{
-      html += `<div class="leg-line">${l.mac} → <b>${l.pazar}</b> @ ${l.odds} <span style="color:var(--muted);float:right;">edge +${(l.edge*100).toFixed(1)}%</span></div>`;
+      html += `<div class="leg-line">${l.mac} → <b>${l.pazar}</b> @ ${l.odds} <span style="color:var(--muted);float:right;">avantaj +${(l.edge*100).toFixed(1)}%</span></div>`;
     });
     html += `<div class="meta-row">
-      <span>Tahmini Başarı: ${(c.basariTahmini*100).toFixed(0)}%</span>
+      <span>Gerçekçi Tutma İhtimali: ${(gercekci*100).toFixed(0)}%</span>
       <span>Toplam Oran: ${c.totalOdds}</span>
-      <span>Ort. Edge: ${(c.avgEdge*100).toFixed(1)}%</span>
+      <span>Ort. Avantaj: ${(c.avgEdge*100).toFixed(1)}%</span>
+    </div>
+    ${c.not ? `<p style="font-size:11.5px;color:var(--gold);margin-top:8px;">⚠ ${c.not}</p>` : ''}
+    <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--muted);">
+      <b style="color:var(--text);">Neden bu kupon?</b> ${generateCouponExplanation(c, c.tip)}
     </div></div>`;
   });
   html += '</div>';
@@ -59,3 +74,4 @@ if(!analysis){
 </script>
 </body>
 </html>
+

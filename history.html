@@ -22,7 +22,7 @@
       <h2>Otomatik Sonuç Kontrolü</h2>
       <p class="hint">Kaydedilmiş raporlardaki maçları API'den tekrar sorgular, bitmiş olanların gerçek skorunu kendi tahminlerinle otomatik karşılaştırır. Elle bir şey işaretlemen gerekmez.</p>
       <div class="btn-row">
-        <button class="primary" id="autoCheckBtn" onclick="runAutoCheck()">Sonuçları Otomatik Kontrol Et</button>
+        <button class="btn-c1" id="autoCheckBtn" onclick="runAutoCheck()">Sonuçları Otomatik Kontrol Et</button>
         <span class="save-note" id="autoCheckStatus"></span>
       </div>
     </div>
@@ -159,7 +159,7 @@ function renderLegLogger(){
   });
   html += `</tbody></table></div>
   <div class="btn-row" style="margin-top:12px;">
-    <button class="primary" onclick="saveLoggedResults('${dateKey}')">Sonuçları Kaydet</button>
+    <button class="btn-c3" onclick="saveLoggedResults('${dateKey}')">Sonuçları Kaydet</button>
     <span class="save-note" id="logSaveNote"></span>
   </div>`;
   el.innerHTML = html;

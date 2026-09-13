@@ -24,6 +24,7 @@
 <script src="js/storage.js"></script>
 <script src="js/poisson.js"></script>
 <script src="js/edge.js"></script>
+<script src="js/scoring.js"></script>
 <script src="js/statistics.js"></script>
 <script src="js/app.js"></script>
 <script>
@@ -65,8 +66,8 @@ function renderPage(){
         <select id="f_market"><option value="">Tümü</option>${marketler.map(m=>`<option value="${m}">${m}</option>`).join('')}</select>
       </div>
       <div class="field">
-        <label>Risk Seviyesi</label>
-        <select id="f_risk"><option value="">Tümü</option><option>Düşük</option><option>Orta</option><option>Yüksek</option><option>Belirsiz</option></select>
+        <label>Değerlendirme</label>
+        <select id="f_risk"><option value="">Tümü</option><option>Oynanabilir</option><option>Makul Seçenek</option><option>Dengeli</option><option>Riskli Maç</option><option>Bilgi Yetersiz</option></select>
       </div>
     </div>
     <div class="stat-row" style="grid-template-columns:repeat(4,1fr);">
@@ -77,7 +78,7 @@ function renderPage(){
         <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="f_hideWeak" style="width:15px;height:15px;"> Gerçek başarı oranı %30 altındaki marketleri gizle</label>
       </div>
     </div>
-    <div class="btn-row"><button class="ghost" onclick="temizleFiltreler()">Filtreleri Temizle</button><span class="save-note" id="filterCount"></span></div>
+    <div class="btn-row"><button class="btn-c1" onclick="uygulaFiltreler()">Filtreleri Uygula</button><button class="btn-c4" onclick="temizleFiltreler()">Filtreleri Temizle</button><span class="save-note" id="filterCount"></span></div>
   </div>`;
 
   html += `<div class="panel"><h2>Maç Bazlı Detay</h2><div class="table-scroll"><table>
@@ -139,7 +140,7 @@ function uygulaFiltreler(){
   const filtreli = analysis.legs.filter(l=>
     (!lig || l.lig===lig) &&
     (!market || l.pazar===market) &&
-    (!risk || l.risk===risk) &&
+    (!risk || getVerdict(l.guvenScore, l.edge).etiket===risk) &&
     l.odds >= minOdds &&
     l.guvenScore >= minGuven &&
     l.edge >= minEdge &&
@@ -148,14 +149,16 @@ function uygulaFiltreler(){
 
   document.getElementById('filterCount').textContent = `${filtreli.length} / ${analysis.legs.length} bacak gösteriliyor`;
 
-  let html = `<table><thead><tr><th>Maç</th><th>Lig</th><th>Pazar</th><th>Model</th><th>Oran</th><th>İma Edilen</th><th>Edge</th><th>EV</th><th>Risk</th><th>Yıldız</th></tr></thead><tbody>`;
+  let html = `<table><thead><tr><th>Maç</th><th>Lig</th><th>Pazar</th><th>Kazanma İhtimali</th><th>Oran</th><th>İma Edilen</th><th>Avantaj</th><th>EV</th><th>Değerlendirme</th><th>Risk %</th><th>Yıldız</th></tr></thead><tbody>`;
   [...filtreli].sort((a,b)=>b.edge-a.edge).forEach(l=>{
+    const v = getVerdict(l.guvenScore, l.edge);
     html += `<tr>
       <td>${l.mac}</td><td>${l.lig||'—'}</td><td>${l.pazar}</td><td>${(l.modelProb*100).toFixed(1)}%</td><td>${l.odds}</td>
       <td>${(l.implied*100).toFixed(1)}%</td>
       <td class="${l.edge>=0?'edge-pos':'edge-neg'}">${(l.edge*100).toFixed(1)}%</td>
       <td class="${l.ev>=0?'edge-pos':'edge-neg'}">${l.ev>=0?'+':''}${(l.ev*100).toFixed(1)}%</td>
-      <td>${l.risk}</td><td class="stars">${starString(l.stars)}</td>
+      <td class="tag" style="color:var(--${v.renk})">${v.etiket}</td>
+      <td>${riskYuzdesi(l)}%</td><td class="stars">${starString(l.stars)}</td>
     </tr>`;
   });
   html += `</tbody></table>`;

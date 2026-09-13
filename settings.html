@@ -18,6 +18,20 @@
     <div class="panel">
       <h2>Kupon Eşikleri</h2>
       <p class="hint">Bu değerler artık kupon oluşumunu ENGELLEMİYOR — sadece sıralama/etiketleme için kullanılıyor. Sistem her zaman bulduğu en iyi kombinasyonları gösterir, kararı sen verirsin (negatif edge de olsa görürsün, açıkça işaretlenir).</p>
+
+      <details style="margin-bottom:18px;background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:12px 14px;">
+        <summary style="cursor:pointer;font-weight:600;font-size:13px;color:var(--gold);">📖 Bu ayarlar ne işe yarar? (Kullanım Kılavuzu)</summary>
+        <div style="margin-top:12px;font-size:12.5px;color:var(--muted);line-height:1.7;">
+          <p><b style="color:var(--text);">Minimum Edge:</b> Modelin gördüğü olasılıkla bahis oranının ima ettiği olasılık arasındaki fark. Artık bir bacağı ENGELLEMEZ, sadece "En Güçlü Bacaklar" listesinde sıralamayı etkiler. Negatif bile olsa görürsün.</p>
+          <p><b style="color:var(--text);">Minimum Güven Skoru:</b> Tahminin kaç maçlık veriye dayandığını yansıtan 0-100 puan. Düşükse "Bilgi Yetersiz" etiketi görürsün — bu bir engel değil, bir uyarıdır.</p>
+          <p><b style="color:var(--text);">Piyasa Ağırlığı:</b> Modelin kendi hesabı ile bahis oranının ima ettiği olasılığı ne oranda karıştıracağını belirler. Düşükse model daha "cesur" (kendi görüşüne sadık), yüksekse piyasaya daha yakın (daha temkinli) tahminler üretir. Sistem, oran ne kadar tek taraflıysa (net favori/net mağlup) bu ağırlığı otomatik olarak artırır.</p>
+          <p><b style="color:var(--text);">Minimum / Maksimum Oran:</b> Kupon motorunun hangi oran aralığındaki bacakları "malzeme" olarak kullanacağını belirler. Çok düşük oranlı bacaklar genelde kuponu "doldurmak" için kullanılır, bunu istemiyorsan minimum oranı yükselt.</p>
+          <p><b style="color:var(--text);">Hedef Toplam Oran (Alt/Üst Sınır):</b> "Dengeli Kupon" stratejisinin ulaşmaya çalıştığı toplam oran aralığı. Örn. 4.5-6.5 demek, birleşik bacakların çarpımının bu aralıkta olmasını hedefler.</p>
+          <p><b style="color:var(--text);">Maksimum Bacak Sayısı:</b> Bir kuponda en fazla kaç maçın birleştirilebileceği. Fazla bacak = daha yüksek oran ama daha düşük gerçekleşme ihtimali.</p>
+          <p><b style="color:var(--text);">Kupon Sayısı:</b> Şu an sistem her zaman 4 sabit stratejiyi (Güvenli/Dengeli/Yüksek Oran/Sürpriz) üretmeye çalıştığı için bu ayar aktif olarak kullanılmıyor, ileride kaldırılabilir.</p>
+        </div>
+      </details>
+
       <div class="field"><label>Minimum Edge (bilgi amaçlı sıralama, artık engel değil) <span id="v_minEdge"></span></label>
         <input type="range" id="minEdge" min="-100" max="50" step="1"></div>
       <div class="field"><label>Minimum Güven Skoru (bilgi amaçlı, artık engel değil) <span id="v_minGuven"></span></label>
@@ -37,7 +51,7 @@
         <input type="range" id="maxLegs" min="1" max="6" step="1"></div>
       <div class="field"><label>Kupon Sayısı <span id="v_kuponSayisi"></span></label>
         <input type="range" id="kuponSayisi" min="1" max="10" step="1"></div>
-      <button class="primary" onclick="saveAll()">Kaydet</button>
+      <button class="btn-c1" onclick="saveAll()">Kaydet</button>
       <span class="save-note" id="saveNote"></span>
     </div>
 
@@ -50,8 +64,8 @@
     <div class="panel">
       <h2>Görünüm</h2>
       <div class="btn-row">
-        <button class="ghost" onclick="setTheme('dark')">Koyu</button>
-        <button class="ghost" onclick="setTheme('light')">Açık</button>
+        <button class="btn-c3" onclick="setTheme('dark')">Koyu</button>
+        <button class="btn-c5" onclick="setTheme('light')">Açık</button>
       </div>
     </div>
 
@@ -59,8 +73,8 @@
       <h2>Veri Yedekleme</h2>
       <p class="hint">Tüm veriler bu tarayıcıda saklanır. Başka bir bilgisayara taşımak veya yedek almak için dışa aktar / içe aktar kullan.</p>
       <div class="btn-row">
-        <button class="ghost" onclick="exportAllData()">Tüm Veriyi JSON Olarak İndir</button>
-        <label class="ghost" style="cursor:pointer;">İçe Aktar
+        <button class="btn-c2" onclick="exportAllData()">Tüm Veriyi JSON Olarak İndir</button>
+        <label class="btn-c4" style="cursor:pointer;">İçe Aktar
           <input type="file" accept=".json" style="display:none;" onchange="importAllData(event)">
         </label>
         <button class="ghost" style="border-color:var(--risk);color:var(--risk);" onclick="clearAllData()">Tüm Veriyi Sil</button>
